@@ -28,10 +28,8 @@
   var MIN_PASSWORD_LENGTH = 6;
   var SYNC_INTERVAL = 60000; // 60 秒同步一次
 
-  // GitHub API 配置（公开仓库，只需 token 写入）
-  var GITHUB_API = 'https://api.github.com/repos/ruan996-maker/songdye-digital-design/contents/data/users.json';
-  // Token 用于管理员增删用户时同步到云端；登录验证只需读取（无需 token）
-  var _githubToken = '';
+  // GitHub 云端用户数据（公开 raw URL，无需 token 即可读取）
+  var CLOUD_USERS_URL = 'https://raw.githubusercontent.com/ruan996-maker/songdye-digital-design/main/data/users.json';
   var BRANCH = 'main';
 
   // 默认管理员账户
@@ -130,29 +128,22 @@
   var _cloudUsers = null;  // 云端缓存
   var _cloudSha = null;    // 文件 SHA，用于更新
 
-  /** 从 GitHub 拉取用户数据（用于登录验证，GET 请求无需 token） */
+  /** 从 GitHub 拉取用户数据（使用 raw URL，无需 token） */
   function fetchCloudUsers() {
     var xhr = new XMLHttpRequest();
-    xhr.open('GET', GITHUB_API + '?ref=' + BRANCH, true);
-    xhr.setRequestHeader('Accept', 'application/vnd.github.v3+json');
+    xhr.open('GET', CLOUD_USERS_URL, true);
 
     return new Promise(function (resolve, reject) {
       xhr.onload = function () {
         if (xhr.status === 200) {
           try {
-            var resp = JSON.parse(xhr.responseText);
-            _cloudSha = resp.sha;
-            var content = atob(resp.content.replace(/\n/g, ''));
-            _cloudUsers = JSON.parse(content);
-            // 合并到本地（云端为准）
-            mergeFromCloud(_cloudUsers);
-            resolve(_cloudUsers);
+            var cloudUsers = JSON.parse(xhr.responseText);
+            _cloudUsers = cloudUsers;
+            mergeFromCloud(cloudUsers);
+            resolve(cloudUsers);
           } catch (e) {
             resolve(null);
           }
-        } else if (xhr.status === 404) {
-          // 文件不存在，首次使用
-          resolve(null);
         } else {
           resolve(null);
         }
@@ -183,46 +174,18 @@
     saveUsersLocal(merged);
   }
 
-  /** 推送用户数据到 GitHub（需要 token） */
-  function pushCloudUsers(users) {
-    if (!_githubToken) return Promise.resolve(false);
-
-    var data = JSON.stringify(users, null, 2);
-    var payload = {
-      message: 'update: 同步用户数据 [' + new Date().toLocaleString('zh-CN') + ']',
-      content: btoa(unescape(encodeURIComponent(data))),
-      branch: BRANCH
-    };
-    if (_cloudSha) payload.sha = _cloudSha;
-
-    var xhr = new XMLHttpRequest();
-    xhr.open('PUT', GITHUB_API, true);
-    xhr.setRequestHeader('Authorization', 'token ' + _githubToken);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.setRequestHeader('Accept', 'application/vnd.github.v3+json');
-
-    return new Promise(function (resolve) {
-      xhr.onload = function () {
-        if (xhr.status === 200 || xhr.status === 201) {
-          try {
-            var resp = JSON.parse(xhr.responseText);
-            _cloudSha = resp.content.sha;
-            resolve(true);
-          } catch (e) { resolve(false); }
-        } else {
-          // SHA 冲突，重新拉取再推送
-          if (xhr.status === 409) {
-            fetchCloudUsers().then(function () { return pushCloudUsers(getUsersLocal()); }).then(resolve);
-          } else {
-            resolve(false);
-          }
-        }
-      };
-      xhr.onerror = function () { resolve(false); };
-      xhr.timeout = 15000;
-      xhr.ontimeout = function () { resolve(false); };
-      xhr.send(JSON.stringify(payload));
-    });
+  /** 将用户数据导出为 JSON 供管理员上传到 GitHub */
+  function exportUsersJSON() {
+    var users = getUsersLocal();
+    var json = JSON.stringify(users, null, 2);
+    var blob = new Blob([json], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'users.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showInlineMessage('用户数据已导出，请上传到 GitHub 仓库 data/ 目录');
   }
 
   /** 初始化时从云端同步用户数据 */
@@ -231,13 +194,7 @@
       if (users) {
         console.log('[Auth] 已从云端同步 ' + users.length + ' 个用户');
       } else {
-        console.log('[Auth] 云端同步失败或无数据，使用本地数据');
-        // 如果云端没有数据，推送本地数据上去
-        if (GITHUB_TOKEN) {
-          pushCloudUsers(getUsersLocal()).then(function (ok) {
-            if (ok) console.log('[Auth] 已将本地用户数据推送到云端');
-          });
-        }
+        console.log('[Auth] 云端无数据，使用本地数据');
       }
     });
   }
@@ -347,7 +304,7 @@
     if (idx === -1) return '用户不存在';
     if (sha256(oldPwd) !== users[idx].passwordHash) return '当前密码不正确';
     users[idx].passwordHash = sha256(newPwd); saveUsersLocal(users);
-    pushCloudUsers(users); // 同步到云端
+    exportUsersJSON(users); // 同步到云端
     return true;
   }
 
@@ -362,7 +319,7 @@
     var users = getUsersLocal();
     users.push({ username: username, passwordHash: sha256(password), role: role, realName: realName, createdAt: new Date().toISOString(), lastLogin: null });
     saveUsersLocal(users);
-    pushCloudUsers(users); // 同步到云端
+    exportUsersJSON(users); // 同步到云端
     return true;
   }
 
@@ -374,7 +331,7 @@
     var idx = -1; for (var i = 0; i < users.length; i++) { if (users[i].username === username) { idx = i; break; } }
     if (idx === -1) return '用户不存在';
     users.splice(idx, 1); saveUsersLocal(users);
-    pushCloudUsers(users); // 同步到云端
+    exportUsersJSON(users); // 同步到云端
     return true;
   }
 
@@ -385,7 +342,7 @@
     var idx = -1; for (var i = 0; i < users.length; i++) { if (users[i].username === username) { idx = i; break; } }
     if (idx === -1) return '用户不存在';
     users[idx].passwordHash = sha256(newPwd); saveUsersLocal(users);
-    pushCloudUsers(users); // 同步到云端
+    exportUsersJSON(users); // 同步到云端
     return true;
   }
 
@@ -609,12 +566,6 @@
     // 清除旧锁定
     sessionStorage.removeItem(ATTEMPTS_KEY);
     sessionStorage.removeItem(LOCKOUT_KEY);
-
-    // 设置 GitHub Token（管理员写入权限）
-    // Token 通过 window.SONGDYE_GH_TOKEN 全局变量设置，也可在 init 后通过 API 设置
-    if (typeof window.SONGDYE_GH_TOKEN !== 'undefined' && window.SONGDYE_GH_TOKEN) {
-      _githubToken = window.SONGDYE_GH_TOKEN;
-    }
 
     // 从云端同步用户数据
     syncFromCloud();
