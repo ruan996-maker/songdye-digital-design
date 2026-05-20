@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Auth Debug</title>
+</head>
+<body>
+<h2>认证系统诊断</h2>
+<pre id="log"></pre>
+<script>
+(function() {
+    const log = document.getElementById('log');
+    function add(text) { log.textContent += text + '\n'; }
+
+    add('=== 1. SHA-256 哈希测试 ===');
+
+    async function sha256(message) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(message);
+
+        if (typeof crypto.subtle !== 'undefined' && typeof crypto.subtle.digestSync === 'function') {
+            add('  使用: crypto.subtle.digestSync');
+            const hashBuffer = crypto.subtle.digestSync('SHA-256', data);
+            return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        if (typeof crypto.subtle !== 'undefined') {
+            add('  使用: crypto.subtle.digest (async)');
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        add('  使用: fallbackHash');
+        let h1 = 5381, h2 = 52711;
+        for (let i = 0; i < message.length; i++) {
+            const ch = message.charCodeAt(i);
+            h1 = ((h1 << 5) + h1 + ch) & 0x7fffffff;
+            h2 = ((h2 << 5) + h2 + ch) & 0x7fffffff;
+        }
+        return ((h1 << 16) | h2).toString(16).padStart(16, '0');
+    }
+
+    async function test() {
+        const hash = await sha256('songdye2026');
+        add('  "songdye2026" 的 SHA-256 = ' + hash);
+
+        add('\n=== 2. localStorage 检查 ===');
+        const raw = localStorage.getItem('songdye_users');
+        if (raw) {
+            add('  songdye_users 存在');
+            try {
+                const users = JSON.parse(raw);
+                add('  用户数量: ' + users.length);
+                users.forEach(function(u) {
+                    add('  用户: ' + u.username + ' | hash: ' + (u.passwordHash || 'N/A') + ' | role: ' + u.role);
+                });
+            } catch(e) {
+                add('  JSON 解析失败: ' + e.message);
+            }
+        } else {
+            add('  songdye_users 不存在 (空)');
+        }
+
+        add('\n=== 3. sessionStorage 检查 ===');
+        const session = sessionStorage.getItem('songdye_session');
+        add('  songdye_session: ' + (session ? '存在 - ' + session.substring(0, 80) : '不存在'));
+        const attempts = sessionStorage.getItem('songdye_login_attempts');
+        add('  songdye_login_attempts: ' + (attempts || '无'));
+        const lockout = sessionStorage.getItem('songdye_lockout_until');
+        add('  songdye_lockout_until: ' + (lockout ? new Date(parseInt(lockout)).toLocaleString() : '无'));
+
+        add('\n=== 4. DOM 元素检查 ===');
+        const els = [
+            'auth-login-overlay', 'auth-login-form', 'auth-login-btn',
+            'auth-username', 'auth-password', 'auth-login-error',
+            'app-main', 'auth-user-bar', 'auth-user-info',
+            'auth-admin-btn', 'auth-logout-btn', 'auth-change-pwd-btn'
+        ];
+        els.forEach(function(id) {
+            const el = document.getElementById(id);
+            add('  #' + id + ': ' + (el ? '存在' : '❌ 缺失'));
+        });
+
+        add('\n=== 5. 登录尝试 ===');
+        // 模拟登录
+        if (typeof window.AuthSystem !== 'undefined') {
+            add('  AuthSystem 已加载');
+            try {
+                const result = await window.AuthSystem.login('admin', 'songdye2026');
+                add('  登录结果: ' + JSON.stringify(result));
+            } catch(e) {
+                add('  登录报错: ' + e.message + '\n' + e.stack);
+            }
+        } else {
+            add('  ❌ AuthSystem 未加载!');
+        }
+
+        add('\n=== 6. crypto.subtle 可用性 ===');
+        add('  crypto.subtle: ' + (typeof crypto.subtle));
+        add('  crypto.subtle.digestSync: ' + (typeof (crypto.subtle ? crypto.subtle.digestSync : undefined)));
+    }
+
+    test();
+})();
+</script>
+</body>
+</html>
