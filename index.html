@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>宋染 · 非遗数字设计系统</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- 水墨装饰背景 -->
+    <div class="ink-bg"></div>
+
+    <!-- ========== 登录遮罩层 ========== -->
+    <div id="auth-login-overlay" class="auth-overlay">
+        <div class="auth-card">
+            <div class="auth-logo">
+                <span class="auth-logo-icon">染</span>
+                <h2>宋染数字设计系统</h2>
+                <p class="auth-subtitle">非遗文化 · 技术解码 · 数字重构</p>
+            </div>
+            <form id="auth-login-form" class="auth-form" autocomplete="off">
+                <div class="auth-field">
+                    <label for="auth-username">账号</label>
+                    <input type="text" id="auth-username" placeholder="请输入账号" required maxlength="20">
+                </div>
+                <div class="auth-field">
+                    <label for="auth-password">密码</label>
+                    <input type="password" id="auth-password" placeholder="请输入密码" required maxlength="32">
+                </div>
+                <div id="auth-login-error" class="auth-error" style="display:none"></div>
+                <button type="submit" class="btn btn-primary btn-block">登 录</button>
+            </form>
+            <p class="auth-footer">授权访问 · 仅限授权人员使用</p>
+        </div>
+    </div>
+
+    <!-- ========== 管理员面板 ========== -->
+    <div id="admin-panel-overlay" class="auth-overlay" style="display:none">
+        <div class="admin-panel">
+            <div class="admin-header">
+                <h2>用户管理</h2>
+                <button id="admin-panel-close" class="admin-close-btn">✕</button>
+            </div>
+            <div class="admin-body">
+                <div class="admin-section">
+                    <h3>用户列表</h3>
+                    <div id="admin-users-list" class="admin-users-table"></div>
+                </div>
+                <div class="admin-section">
+                    <h3>添加用户</h3>
+                    <form id="admin-add-form" class="admin-add-form" autocomplete="off">
+                        <div class="auth-field">
+                            <label>账号</label>
+                            <input type="text" id="admin-new-username" placeholder="输入账号" required maxlength="20">
+                        </div>
+                        <div class="auth-field">
+                            <label>姓名</label>
+                            <input type="text" id="admin-new-realname" placeholder="输入真实姓名" required maxlength="20">
+                        </div>
+                        <div class="auth-field">
+                            <label>初始密码</label>
+                            <input type="password" id="admin-new-password" placeholder="设置初始密码" required minlength="6" maxlength="32">
+                        </div>
+                        <div class="auth-field">
+                            <label>角色</label>
+                            <select id="admin-new-role">
+                                <option value="user">普通用户</option>
+                                <option value="admin">管理员</option>
+                            </select>
+                        </div>
+                        <div id="admin-add-error" class="auth-error" style="display:none"></div>
+                        <button type="submit" class="btn btn-primary">添加用户</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 修改密码弹窗 ========== -->
+    <div id="change-pwd-overlay" class="auth-overlay" style="display:none">
+        <div class="auth-card auth-card-sm">
+            <h2>修改密码</h2>
+            <form id="change-pwd-form" class="auth-form" autocomplete="off">
+                <div class="auth-field">
+                    <label>当前密码</label>
+                    <input type="password" id="pwd-current" placeholder="输入当前密码" required>
+                </div>
+                <div class="auth-field">
+                    <label>新密码</label>
+                    <input type="password" id="pwd-new" placeholder="输入新密码（至少6位）" required minlength="6">
+                </div>
+                <div class="auth-field">
+                    <label>确认新密码</label>
+                    <input type="password" id="pwd-confirm" placeholder="再次输入新密码" required>
+                </div>
+                <div id="change-pwd-error" class="auth-error" style="display:none"></div>
+                <div class="auth-btn-group">
+                    <button type="button" class="btn btn-secondary" id="pwd-cancel-btn">取消</button>
+                    <button type="submit" class="btn btn-primary">确认修改</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 顶部导航 -->
+    <header class="app-header">
+        <div class="brand">
+            <span class="brand-icon">染</span>
+            <div class="brand-text">
+                <h1>宋染数字设计系统</h1>
+                <p class="brand-sub">非遗文化 · 技术解码 · 数字重构</p>
+            </div>
+        </div>
+        <nav class="main-nav">
+            <button class="nav-tab active" data-module="pattern">
+                <span class="nav-icon">◈</span>
+                纹样图库
+            </button>
+            <button class="nav-tab" data-module="color">
+                <span class="nav-icon">◐</span>
+                智能配色
+            </button>
+            <button class="nav-tab" data-module="process">
+                <span class="nav-icon">⬡</span>
+                工艺模拟
+            </button>
+            <button class="nav-tab" data-module="preview">
+                <span class="nav-icon">◇</span>
+                3D预览
+            </button>
+        </nav>
+        <div class="header-user-bar" id="auth-user-bar" style="display:none">
+            <span id="auth-user-info" class="user-info"></span>
+            <button id="auth-admin-btn" class="header-icon-btn" title="用户管理" style="display:none">⚙</button>
+            <button id="auth-change-pwd-btn" class="header-icon-btn" title="修改密码">🔑</button>
+            <button id="auth-logout-btn" class="header-icon-btn btn-logout" title="退出登录">⏏</button>
+        </div>
+    </header>
+
+    <!-- 模块容器 -->
+    <main class="app-main" id="app-main">
+        <!-- 模块一：纹样图库 -->
+        <section id="module-pattern" class="module active">
+            <div class="module-header">
+                <h2>纹样图库管理</h2>
+                <p class="module-desc">传统宋染纹样数字化典藏与程序化生成</p>
+            </div>
+            <div class="module-toolbar">
+                <div class="filter-group">
+                    <button class="filter-btn active" data-category="all">全部纹样</button>
+                    <button class="filter-btn" data-category="plant">植物纹</button>
+                    <button class="filter-btn" data-category="geometric">几何纹</button>
+                    <button class="filter-btn" data-category="nature">自然纹</button>
+                    <button class="filter-btn" data-category="abstract">抽象纹</button>
+                    <button class="filter-btn" data-category="imported">导入素材</button>
+                </div>
+                <div class="action-group">
+                    <button class="btn btn-primary" id="btn-generate">程序化生成</button>
+                    <button class="btn btn-secondary" id="btn-import-img">导入素材</button>
+                    <button class="btn btn-secondary" id="btn-export-all">批量导出</button>
+                    <input type="file" id="import-file-input" accept="image/*" multiple hidden>
+                </div>
+            </div>
+            <div class="pattern-grid" id="pattern-grid">
+                <!-- 纹样卡片由 JS 动态生成 -->
+            </div>
+            <!-- 生成器面板 -->
+            <div class="generator-panel hidden" id="generator-panel">
+                <h3>程序化纹样生成器</h3>
+                <div class="gen-types">
+                    <button class="gen-type active" data-gen="symmetric">对称纹样</button>
+                    <button class="gen-type" data-gen="gradient">渐变晕染</button>
+                    <button class="gen-type" data-gen="geometric">几何拼接</button>
+                </div>
+                <div class="gen-controls" id="gen-controls">
+                    <!-- 由 JS 动态填充 -->
+                </div>
+                <div class="gen-preview">
+                    <canvas id="gen-canvas" width="400" height="400"></canvas>
+                </div>
+                <div class="gen-actions">
+                    <button class="btn btn-primary" id="btn-gen-create">生成纹样</button>
+                    <button class="btn btn-secondary" id="btn-gen-save">保存到图库</button>
+                </div>
+            </div>
+            <!-- 编辑弹窗 -->
+            <div class="modal hidden" id="pattern-modal">
+                <div class="modal-backdrop"></div>
+                <div class="modal-content pattern-modal-body">
+                    <button class="modal-close">&times;</button>
+                    <div class="modal-header">
+                        <h3 id="modal-pattern-name">纹样名称</h3>
+                        <span class="modal-tag" id="modal-pattern-category">分类</span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="modal-preview">
+                            <canvas id="modal-canvas" width="480" height="480"></canvas>
+                        </div>
+                        <div class="modal-controls">
+                            <div class="control-group">
+                                <label>主色调</label>
+                                <input type="color" id="modal-color-primary" value="#2c5f7c">
+                            </div>
+                            <div class="control-group">
+                                <label>辅色调</label>
+                                <input type="color" id="modal-color-secondary" value="#8b6914">
+                            </div>
+                            <div class="control-group">
+                                <label>缩放 <span id="scale-val">100%</span></label>
+                                <input type="range" id="modal-scale" min="50" max="200" value="100">
+                            </div>
+                            <div class="control-group">
+                                <label>旋转 <span id="rotate-val">0°</span></label>
+                                <input type="range" id="modal-rotate" min="0" max="360" value="0">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-primary" id="btn-modal-export">导出 PNG</button>
+                        <button class="btn btn-secondary" id="btn-modal-apply-preview">应用到 3D 预览</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 模块二：智能配色 -->
+        <section id="module-color" class="module">
+            <div class="module-header">
+                <h2>智能配色引擎</h2>
+                <p class="module-desc">传统染料色谱 · 智能推荐 · 图片取色匹配</p>
+            </div>
+            <div class="color-layout">
+                <!-- 左侧：色谱面板 -->
+                <div class="color-spectrum-panel">
+                    <h3>传统染料色谱</h3>
+                    <div class="spectrum-list" id="spectrum-list">
+                        <!-- 由 JS 动态生成 -->
+                    </div>
+                </div>
+                <!-- 中间：推荐引擎 -->
+                <div class="color-recommend-panel">
+                    <h3>智能配色推荐</h3>
+                    <div class="color-picker-area">
+                        <div class="main-color-picker">
+                            <label>选择主色</label>
+                            <input type="color" id="main-color-picker" value="#2c5f7c">
+                            <div class="color-preview" id="main-color-preview" style="background:#2c5f7c"></div>
+                        </div>
+                        <div class="recommend-modes">
+                            <button class="mode-btn active" data-mode="analogous">同类色</button>
+                            <button class="mode-btn" data-mode="complementary">互补色</button>
+                            <button class="mode-btn" data-mode="triadic">三角配色</button>
+                            <button class="mode-btn" data-mode="split">分裂互补</button>
+                        </div>
+                    </div>
+                    <div class="recommend-results" id="recommend-results">
+                        <!-- 由 JS 动态生成 -->
+                    </div>
+                </div>
+                <!-- 右侧：取色 + 调色板 -->
+                <div class="color-tools-panel">
+                    <div class="image-picker">
+                        <h3>图片取色匹配</h3>
+                        <div class="upload-area" id="upload-area">
+                            <span>点击或拖拽上传图片</span>
+                            <input type="file" id="image-upload" accept="image/*" hidden>
+                        </div>
+                        <canvas id="image-canvas" width="300" height="200" class="hidden"></canvas>
+                        <div class="extracted-colors" id="extracted-colors"></div>
+                    </div>
+                    <div class="palette-editor">
+                        <h3>调色板编辑器</h3>
+                        <canvas id="hsl-canvas" width="280" height="280"></canvas>
+                        <div class="palette-sliders">
+                            <div class="slider-row">
+                                <label>色相</label>
+                                <input type="range" id="hue-slider" min="0" max="360" value="200">
+                            </div>
+                            <div class="slider-row">
+                                <label>饱和度</label>
+                                <input type="range" id="sat-slider" min="0" max="100" value="60">
+                            </div>
+                            <div class="slider-row">
+                                <label>明度</label>
+                                <input type="range" id="light-slider" min="0" max="100" value="40">
+                            </div>
+                        </div>
+                        <div class="palette-current" id="palette-current"></div>
+                        <button class="btn btn-small" id="btn-add-palette">加入配色板</button>
+                    </div>
+                    <div class="saved-palette" id="saved-palette">
+                        <h3>已选配色板</h3>
+                        <div class="palette-colors" id="palette-colors"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 模块三：工艺模拟 -->
+        <section id="module-process" class="module">
+            <div class="module-header">
+                <h2>工艺参数模拟</h2>
+                <p class="module-desc">漂染工艺全参数数字化调控与效果预览</p>
+            </div>
+            <div class="process-layout">
+                <!-- 参数面板 -->
+                <div class="process-params">
+                    <h3>工艺参数</h3>
+                    <div class="param-group">
+                        <label>染料类型</label>
+                        <div class="dye-selector" id="dye-selector">
+                            <button class="dye-btn active" data-dye="indigo" style="--dye-color:#2c5f7c">
+                                <span class="dye-swatch"></span>靛蓝
+                            </button>
+                            <button class="dye-btn" data-dye="madder" style="--dye-color:#b5433a">
+                                <span class="dye-swatch"></span>茜红
+                            </button>
+                            <button class="dye-btn" data-dye="sophora" style="--dye-color:#8b6914">
+                                <span class="dye-swatch"></span>槐黄
+                            </button>
+                            <button class="dye-btn" data-dye="gallnut" style="--dye-color:#5c4033">
+                                <span class="dye-swatch"></span>茶褐
+                            </button>
+                            <button class="dye-btn" data-dye="gromwell" style="--dye-color:#6b3a6b">
+                                <span class="dye-swatch"></span>紫草
+                            </button>
+                            <button class="dye-btn" data-dye="gardenia" style="--dye-color:#c4a035">
+                                <span class="dye-swatch"></span>栀子
+                            </button>
+                        </div>
+                    </div>
+                    <div class="param-group">
+                        <label>温度 <span class="param-val" id="temp-val">60°C</span></label>
+                        <input type="range" id="temp-slider" min="20" max="100" value="60">
+                        <div class="param-range">
+                            <span>推荐区间: 50-80°C</span>
+                        </div>
+                    </div>
+                    <div class="param-group">
+                        <label>染浴浓度 <span class="param-val" id="conc-val">60%</span></label>
+                        <input type="range" id="conc-slider" min="10" max="100" value="60">
+                    </div>
+                    <div class="param-group">
+                        <label>浸染时长 <span class="param-val" id="time-val">30 分钟</span></label>
+                        <input type="range" id="time-slider" min="1" max="120" value="30">
+                    </div>
+                    <div class="param-group">
+                        <label>染色次数 <span class="param-val" id="dip-val">3 次</span></label>
+                        <input type="range" id="dip-slider" min="1" max="10" value="3">
+                    </div>
+                    <button class="btn btn-primary" id="btn-simulate">开始模拟</button>
+                </div>
+                <!-- 效果预览 -->
+                <div class="process-preview">
+                    <h3>染色效果预览</h3>
+                    <div class="preview-tabs">
+                        <button class="preview-tab active" data-ptab="simulated">模拟效果</button>
+                        <button class="preview-tab" data-ptab="traditional">传统参考</button>
+                        <button class="preview-tab" data-ptab="compare">对比</button>
+                    </div>
+                    <div class="preview-canvas-wrap">
+                        <canvas id="process-canvas" width="500" height="500"></canvas>
+                    </div>
+                    <div class="process-info" id="process-info">
+                        <p>调整参数后点击"开始模拟"查看效果</p>
+                    </div>
+                </div>
+                <!-- 工艺流程 -->
+                <div class="process-flow">
+                    <h3>工艺流程</h3>
+                    <div class="flow-steps" id="flow-steps">
+                        <div class="flow-step active" data-step="desizing">
+                            <div class="step-num">①</div>
+                            <div class="step-name">退浆</div>
+                            <div class="step-desc">去除织物浆料</div>
+                        </div>
+                        <div class="flow-step" data-step="bleaching">
+                            <div class="step-num">②</div>
+                            <div class="step-name">漂白</div>
+                            <div class="step-desc">洁白底布处理</div>
+                        </div>
+                        <div class="flow-step" data-step="dyeing">
+                            <div class="step-num">③</div>
+                            <div class="step-name">染色</div>
+                            <div class="step-desc">浸染上色</div>
+                        </div>
+                        <div class="flow-step" data-step="washing">
+                            <div class="step-num">④</div>
+                            <div class="step-name">水洗</div>
+                            <div class="step-desc">去除浮色</div>
+                        </div>
+                        <div class="flow-step" data-step="fixing">
+                            <div class="step-num">⑤</div>
+                            <div class="step-name">固色</div>
+                            <div class="step-desc">媒染固着</div>
+                        </div>
+                        <div class="flow-step" data-step="drying">
+                            <div class="step-num">⑥</div>
+                            <div class="step-name">晾干</div>
+                            <div class="step-desc">自然阴干</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 模块四：3D预览 -->
+        <section id="module-preview" class="module">
+            <div class="module-header">
+                <h2>3D 产品预览</h2>
+                <p class="module-desc">纹样实时映射到产品模型 · 交互式预览</p>
+            </div>
+            <div class="preview-layout">
+                <div class="product-selector">
+                    <h3>选择产品</h3>
+                    <div class="product-list" id="product-list">
+                        <button class="product-btn active" data-product="scarf">围巾</button>
+                        <button class="product-btn" data-product="tshirt">T恤</button>
+                        <button class="product-btn" data-product="fan">团扇</button>
+                        <button class="product-btn" data-product="bookmark">书签</button>
+                    </div>
+                    <button class="btn btn-small" id="btn-add-product" style="margin-top:10px;width:100%">+ 添加自定义产品</button>
+                </div>
+                    <canvas id="preview-3d-canvas" width="700" height="600"></canvas>
+                    <div class="preview-3d-hint">拖拽旋转 · 滚轮缩放</div>
+                </div>
+                <div class="preview-settings">
+                    <h3>映射设置</h3>
+                    <div class="setting-group">
+                        <label>纹样来源</label>
+                        <select id="preview-pattern-select">
+                            <option value="">请先从图库选择纹样</option>
+                        </select>
+                    </div>
+                    <div class="setting-group">
+                        <label>光照强度</label>
+                        <input type="range" id="light-slider" min="0" max="100" value="70">
+                    </div>
+                    <div class="setting-group">
+                        <label>背景色</label>
+                        <div class="bg-color-options">
+                            <button class="bg-opt active" data-bg="light" style="background:#f5f0e8">#f5f0e8</button>
+                            <button class="bg-opt" data-bg="dark" style="background:#2a2520">#2a2520</button>
+                            <button class="bg-opt" data-bg="warm" style="background:#e8ddd0">#e8ddd0</button>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="btn-render-3d">重新渲染</button>
+                </div>
+            </div>
+            <!-- 自定义产品配置弹窗 -->
+            <div class="modal hidden" id="product-modal">
+                <div class="modal-backdrop"></div>
+                <div class="modal-content">
+                    <button class="modal-close">&times;</button>
+                    <div class="modal-header">
+                        <h3>添加自定义产品</h3>
+                    </div>
+                    <div class="modal-body" style="display:block">
+                        <!-- 第一步：基本信息 -->
+                        <div class="form-section">
+                            <h4 style="font-family:var(--font-serif);font-size:0.95rem;margin-bottom:12px;letter-spacing:2px">基本信息</h4>
+                            <div class="control-group">
+                                <label>产品名称</label>
+                                <input type="text" id="prod-name" class="form-input" placeholder="如：手提包、茶巾、抱枕..." maxlength="20">
+                            </div>
+                            <div class="control-group">
+                                <label>产品图片</label>
+                                <div class="upload-area" id="prod-upload-area">
+                                    <span>点击或拖拽上传产品图片</span>
+                                    <input type="file" id="prod-img-input" accept="image/*" hidden>
+                                </div>
+                                <canvas id="prod-img-preview" width="200" height="200" class="hidden"></canvas>
+                            </div>
+                        </div>
+                        <!-- 第二步：格式模板 -->
+                        <div class="form-section" style="margin-top:16px">
+                            <h4 style="font-family:var(--font-serif);font-size:0.95rem;margin-bottom:12px;letter-spacing:2px">产品格式模板</h4>
+                            <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">选择产品的形状模板，纹样将按模板轮廓映射到产品上</p>
+                            <div class="template-grid" id="template-grid">
+                                <div class="template-card active" data-template="free">
+                                    <div class="template-icon">◻</div>
+                                    <div class="template-name">自由型</div>
+                                    <div class="template-desc">全图覆盖，适合无特定形状的产品</div>
+                                </div>
+                                <div class="template-card" data-template="scarf">
+                                    <div class="template-icon">▓</div>
+                                    <div class="template-name">围巾型</div>
+                                    <div class="template-desc">围巾轮廓，纹样沿褶皱分布</div>
+                                </div>
+                                <div class="template-card" data-template="tshirt">
+                                    <div class="template-icon">⊕</div>
+                                    <div class="template-name">T恤型</div>
+                                    <div class="template-desc">胸前区域映射，袖身分离</div>
+                                </div>
+                                <div class="template-card" data-template="fan">
+                                    <div class="template-icon">◔</div>
+                                    <div class="template-name">团扇型</div>
+                                    <div class="template-desc">扇形裁剪，适合圆形/扇形产品</div>
+                                </div>
+                                <div class="template-card" data-template="bookmark">
+                                    <div class="template-icon">▐</div>
+                                    <div class="template-name">书签型</div>
+                                    <div class="template-desc">窄长矩形，适合条状产品</div>
+                                </div>
+                                <div class="template-card" data-template="round">
+                                    <div class="template-icon">●</div>
+                                    <div class="template-name">圆形型</div>
+                                    <div class="template-desc">圆形裁剪，适合盘垫/杯垫</div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 第三步：映射设置 -->
+                        <div class="form-section" style="margin-top:16px">
+                            <h4 style="font-family:var(--font-serif);font-size:0.95rem;margin-bottom:12px;letter-spacing:2px">纹样映射设置</h4>
+                            <div class="control-group">
+                                <label>纹样覆盖方式</label>
+                                <div class="mapping-modes">
+                                    <button class="mapping-btn active" data-mapping="overlay">叠加覆盖</button>
+                                    <button class="mapping-btn" data-mapping="replace">替换底色</button>
+                                    <button class="mapping-btn" data-mapping="area">区域映射</button>
+                                </div>
+                            </div>
+                            <div class="control-group" id="mapping-opacity-group">
+                                <label>叠加透明度 <span id="mapping-opacity-val">50%</span></label>
+                                <input type="range" id="mapping-opacity" min="10" max="100" value="50">
+                            </div>
+                            <div class="control-group hidden" id="mapping-area-group">
+                                <label>映射区域位置</label>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                                    <div style="flex:1;min-width:80px">
+                                        <span style="font-size:0.72rem;color:var(--text-muted)">X 偏移</span>
+                                        <input type="range" id="mapping-area-x" min="0" max="100" value="50">
+                                    </div>
+                                    <div style="flex:1;min-width:80px">
+                                        <span style="font-size:0.72rem;color:var(--text-muted)">Y 偏移</span>
+                                        <input type="range" id="mapping-area-y" min="0" max="100" value="50">
+                                    </div>
+                                    <div style="flex:1;min-width:80px">
+                                        <span style="font-size:0.72rem;color:var(--text-muted)">区域大小</span>
+                                        <input type="range" id="mapping-area-size" min="10" max="100" value="60">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" id="btn-prod-cancel">取消</button>
+                        <button class="btn btn-primary" id="btn-prod-confirm">确认添加</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 底部信息 -->
+    <footer class="app-footer">
+        <p>宋染非遗数字设计系统 · 技术解码 — 数字重构 — 场景应用</p>
+    </footer>
+
+    <!-- 脚本加载 -->
+    <script src="js/auth.js"></script>
+    <script src="js/pattern-lib.js"></script>
+    <script src="js/color-engine.js"></script>
+    <script src="js/process-sim.js"></script>
+    <script src="js/preview-3d.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
