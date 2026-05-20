@@ -778,10 +778,22 @@
      ═══════════════════════════════════════════ */
 
   function bindEvents() {
-    // 登录按钮
+    // 登录表单提交拦截（防止页面刷新）
+    var loginForm = document.getElementById('auth-login-form');
+    if (loginForm) {
+      loginForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        handleLoginClick();
+      });
+    }
+
+    // 登录按钮（备用，处理非表单触发场景）
     var loginBtn = document.getElementById('auth-login-btn');
     if (loginBtn) {
-      loginBtn.addEventListener('click', handleLoginClick);
+      loginBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        handleLoginClick();
+      });
     }
 
     // 登录框回车提交
