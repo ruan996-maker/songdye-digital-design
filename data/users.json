@@ -1,0 +1,10 @@
+[
+  {
+    "username": "admin",
+    "passwordHash": "9b54aada688b1950f3737ab8082309ef63fb69d878242bfeaef14035ce390d2f",
+    "role": "admin",
+    "realName": "系统管理员",
+    "createdAt": "2026-05-20T12:00:00.000Z",
+    "lastLogin": null
+  }
+]
