@@ -1943,6 +1943,19 @@ body {
     letter-spacing: 1px;
 }
 
+.auth-sync-status {
+    text-align: center;
+    font-size: 12px;
+    color: var(--ru-cyan);
+    padding: 6px 0;
+    animation: authPulse 1.5s ease infinite;
+}
+
+@keyframes authPulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
 /* ---- 顶栏用户信息 ---- */
 .header-user-bar {
     display: flex;
