@@ -30,7 +30,8 @@
 
   // GitHub API 配置（公开仓库，只需 token 写入）
   var GITHUB_API = 'https://api.github.com/repos/ruan996-maker/songdye-digital-design/contents/data/users.json';
-  var GITHUB_TOKEN = ''; // 由外部设置
+  // Token 用于管理员增删用户时同步到云端；登录验证只需读取（无需 token）
+  var _githubToken = '';
   var BRANCH = 'main';
 
   // 默认管理员账户
@@ -184,7 +185,7 @@
 
   /** 推送用户数据到 GitHub（需要 token） */
   function pushCloudUsers(users) {
-    if (!GITHUB_TOKEN) return Promise.resolve(false);
+    if (!_githubToken) return Promise.resolve(false);
 
     var data = JSON.stringify(users, null, 2);
     var payload = {
@@ -196,7 +197,7 @@
 
     var xhr = new XMLHttpRequest();
     xhr.open('PUT', GITHUB_API, true);
-    xhr.setRequestHeader('Authorization', 'token ' + GITHUB_TOKEN);
+    xhr.setRequestHeader('Authorization', 'token ' + _githubToken);
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.setRequestHeader('Accept', 'application/vnd.github.v3+json');
 
@@ -609,10 +610,10 @@
     sessionStorage.removeItem(ATTEMPTS_KEY);
     sessionStorage.removeItem(LOCKOUT_KEY);
 
-    // 设置 GitHub Token（用于管理员同步操作）
-    // Token 通过 data-config.js 加载
-    if (typeof window.SONGDYE_CONFIG !== 'undefined' && window.SONGDYE_CONFIG.githubToken) {
-      GITHUB_TOKEN = window.SONGDYE_CONFIG.githubToken;
+    // 设置 GitHub Token（管理员写入权限）
+    // Token 通过 window.SONGDYE_GH_TOKEN 全局变量设置，也可在 init 后通过 API 设置
+    if (typeof window.SONGDYE_GH_TOKEN !== 'undefined' && window.SONGDYE_GH_TOKEN) {
+      _githubToken = window.SONGDYE_GH_TOKEN;
     }
 
     // 从云端同步用户数据
