@@ -731,4 +731,12 @@
     getAllUsers: function () { return doGetAllUsers(); }
   };
 
+  // ═══ 自动初始化 ═══
+  // DOM 加载完成后立即初始化认证系统
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
 })();
