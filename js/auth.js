@@ -1,44 +1,37 @@
 /**
- * 宋染 · 非遗数字设计系统 — 身份认证模块 v2
+ * 宋染 · 非遗数字设计系统 — 身份认证模块 v3 (Supabase)
  * ============================================================
- * 云端同步认证方案：
- * - 用户数据存储在 GitHub 仓库的 data/users.json 中
- * - 本地 localStorage 作为缓存层
- * - 管理员增删用户时同步到 GitHub
- * - 登录时优先从 GitHub 拉取最新数据
- * - SHA-256 密码哈希（纯 JS 同步实现）
+ * Supabase BaaS 认证方案：
+ * - 用户数据存储在 Supabase PostgreSQL 数据库
+ * - 前端通过 Supabase JS SDK 直接操作数据库
+ * - 所有设备实时同步，无需手动导出/上传
+ * - 保留 SHA-256 密码哈希（纯 JS 实现），兼容旧数据
  *
- * 公共接口挂载于 window.AuthSystem
+ * 公共接口挂载于 window.AuthSystem（与 v2 完全兼容）
+ *
+ * 使用前请将下方 SUPABASE_URL 和 SUPABASE_ANON_KEY 替换为实际值
  */
+
 ;(function () {
   'use strict';
 
   /* ═══════════════════════════════════════════
-     常量与配置
+     配置
      ═══════════════════════════════════════════ */
 
-  var STORAGE_KEY  = 'songdye_users';
-  var SESSION_KEY  = 'songdye_session';
+  var SUPABASE_URL = 'https://zrdghzoqzoucguntomcl.supabase.co';
+  var SUPABASE_ANON_KEY = 'sb_publishable_XekzKKriauePN_sb4OwvKg_STXhypDn';
+
+  var SESSION_KEY = 'songdye_session';
   var ATTEMPTS_KEY = 'songdye_login_attempts';
-  var LOCKOUT_KEY  = 'songdye_lockout_until';
-  var SYNC_TIME_KEY = 'songdye_sync_time';
-  var INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 分钟
+  var LOCKOUT_KEY = 'songdye_lockout_until';
+  var INACTIVITY_TIMEOUT = 30 * 60 * 1000;
   var MAX_FAILED_ATTEMPTS = 5;
-  var LOCKOUT_DURATION    = 60 * 1000;      // 60 秒
+  var LOCKOUT_DURATION = 60 * 1000;
   var MIN_PASSWORD_LENGTH = 6;
-  var SYNC_INTERVAL = 60000; // 60 秒同步一次
 
-  // GitHub 云端用户数据（公开 raw URL，无需 token 即可读取）
-  var CLOUD_USERS_URL = 'https://raw.githubusercontent.com/ruan996-maker/songdye-digital-design/main/data/users.json';
-  var BRANCH = 'main';
-
-  // 默认管理员账户
-  var DEFAULT_ADMIN = {
-    username: 'admin',
-    password: 'songdye2026',
-    role: 'admin',
-    realName: '系统管理员'
-  };
+  // Supabase 客户端（延迟初始化）
+  var _sb = null;
 
   /* ═══════════════════════════════════════════
      SHA-256 同步哈希（纯 JS 实现）
@@ -86,116 +79,116 @@
   }
 
   /* ═══════════════════════════════════════════
-     数据持久层（云端 + 本地缓存）
+     Supabase 客户端初始化
      ═══════════════════════════════════════════ */
+
+  function isSupabaseConfigured() {
+    return SUPABASE_URL.indexOf('YOUR_PROJECT') === -1 && SUPABASE_ANON_KEY.indexOf('YOUR_ANON_KEY') === -1;
+  }
+
+  function getSupabase() {
+    if (_sb) return _sb;
+    if (!isSupabaseConfigured()) {
+      console.warn('[Auth] Supabase 未配置，回退到本地模式');
+      return null;
+    }
+    try {
+      if (typeof supabase !== 'undefined' && supabase.createClient) {
+        _sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        console.log('[Auth] Supabase 客户端已连接');
+        return _sb;
+      }
+    } catch (e) {
+      console.error('[Auth] Supabase 初始化失败:', e);
+    }
+    return null;
+  }
+
+  /* ═══════════════════════════════════════════
+     数据层：Supabase + localStorage 双模式
+     ═══════════════════════════════════════════ */
+
+  // --- 本地模式（后备） ---
+  var STORAGE_KEY = 'songdye_users';
+  var DEFAULT_ADMIN = { username: 'admin', password: 'songdye2026', role: 'admin', realName: '系统管理员' };
 
   function getUsersLocal() {
     try { var raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : []; }
     catch (e) { return []; }
   }
-
-  function saveUsersLocal(users) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-    localStorage.setItem(SYNC_TIME_KEY, String(Date.now()));
-  }
-
-  function findUserLocal(username) {
-    return getUsersLocal().find(function (u) { return u.username === username; }) || null;
-  }
-
-  // 确保默认管理员存在
+  function saveUsersLocal(users) { localStorage.setItem(STORAGE_KEY, JSON.stringify(users)); }
+  function findUserLocal(username) { return getUsersLocal().find(function (u) { return u.username === username; }) || null; }
   function ensureDefaultAdmin() {
     var users = getUsersLocal();
-    var adminExists = users.some(function (u) { return u.username === 'admin'; });
-    if (!adminExists) {
-      users.unshift({
-        username: DEFAULT_ADMIN.username,
-        passwordHash: sha256(DEFAULT_ADMIN.password),
-        role: DEFAULT_ADMIN.role,
-        realName: DEFAULT_ADMIN.realName,
-        createdAt: new Date().toISOString(),
-        lastLogin: null
-      });
+    if (!users.some(function (u) { return u.username === 'admin'; })) {
+      users.unshift({ username: DEFAULT_ADMIN.username, passwordHash: sha256(DEFAULT_ADMIN.password), role: DEFAULT_ADMIN.role, realName: DEFAULT_ADMIN.realName, createdAt: new Date().toISOString(), lastLogin: null });
       saveUsersLocal(users);
     }
   }
 
-  /* ═══════════════════════════════════════════
-     GitHub 云端同步
-     ═══════════════════════════════════════════ */
-
-  var _cloudSyncLock = false;
-  var _cloudUsers = null;  // 云端缓存
-  var _cloudSha = null;    // 文件 SHA，用于更新
-
-  /** 从 GitHub 拉取用户数据（使用 raw URL，无需 token） */
-  function fetchCloudUsers() {
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', CLOUD_USERS_URL, true);
-
-    return new Promise(function (resolve, reject) {
-      xhr.onload = function () {
-        if (xhr.status === 200) {
-          try {
-            var cloudUsers = JSON.parse(xhr.responseText);
-            _cloudUsers = cloudUsers;
-            mergeFromCloud(cloudUsers);
-            resolve(cloudUsers);
-          } catch (e) {
-            resolve(null);
-          }
-        } else {
-          resolve(null);
-        }
+  // --- Supabase 模式 ---
+  function sbFetchUser(username) {
+    var sb = getSupabase();
+    if (!sb) return Promise.resolve(null);
+    return sb.from('users').select('*').eq('username', username).single().then(function (res) {
+      if (res.error) return null;
+      return {
+        username: res.data.username,
+        passwordHash: res.data.password_hash,
+        role: res.data.role,
+        realName: res.data.real_name,
+        createdAt: res.data.created_at,
+        lastLogin: res.data.last_login
       };
-      xhr.onerror = function () { resolve(null); };
-      xhr.timeout = 10000;
-      xhr.ontimeout = function () { resolve(null); };
-      xhr.send();
     });
   }
 
-  /** 合并云端数据到本地 */
-  function mergeFromCloud(cloudUsers) {
-    if (!cloudUsers || !Array.isArray(cloudUsers)) return;
-    var localUsers = getUsersLocal();
-    var localMap = {};
-    localUsers.forEach(function (u) { localMap[u.username] = u; });
-
-    // 以云端为准，但保留本地有而云端没有的用户
-    var merged = [];
-    cloudUsers.forEach(function (cu) {
-      merged.push(cu);
-      delete localMap[cu.username];
+  function sbUpdateLastLogin(username) {
+    var sb = getSupabase();
+    if (!sb) return Promise.resolve();
+    return sb.from('users').update({ last_login: new Date().toISOString() }).eq('username', username).then(function (res) {
+      if (res.error) console.error('[Auth] 更新登录时间失败:', res.error);
     });
-    // 保留本地独有的用户
-    Object.keys(localMap).forEach(function (k) { merged.push(localMap[k]); });
-
-    saveUsersLocal(merged);
   }
 
-  /** 将用户数据导出为 JSON 供管理员上传到 GitHub */
-  function exportUsersJSON() {
-    var users = getUsersLocal();
-    var json = JSON.stringify(users, null, 2);
-    var blob = new Blob([json], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'users.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    showInlineMessage('用户数据已导出，请上传到 GitHub 仓库 data/ 目录');
+  function sbUpdatePassword(username, newHash) {
+    var sb = getSupabase();
+    if (!sb) return Promise.resolve(false);
+    return sb.from('users').update({ password_hash: newHash }).eq('username', username).then(function (res) {
+      return !res.error;
+    });
   }
 
-  /** 初始化时从云端同步用户数据 */
-  function syncFromCloud() {
-    fetchCloudUsers().then(function (users) {
-      if (users) {
-        console.log('[Auth] 已从云端同步 ' + users.length + ' 个用户');
-      } else {
-        console.log('[Auth] 云端无数据，使用本地数据');
-      }
+  function sbInsertUser(data) {
+    var sb = getSupabase();
+    if (!sb) return Promise.resolve({ ok: false, error: 'Supabase 未连接' });
+    return sb.from('users').insert({
+      username: data.username,
+      password_hash: data.passwordHash,
+      role: data.role,
+      real_name: data.realName
+    }).then(function (res) {
+      if (res.error) return { ok: false, error: res.error.message };
+      return { ok: true };
+    });
+  }
+
+  function sbDeleteUser(username) {
+    var sb = getSupabase();
+    if (!sb) return Promise.resolve(false);
+    return sb.from('users').delete().eq('username', username).then(function (res) {
+      return !res.error;
+    });
+  }
+
+  function sbFetchAllUsers() {
+    var sb = getSupabase();
+    if (!sb) return Promise.resolve([]);
+    return sb.from('users').select('*').order('created_at', { ascending: true }).then(function (res) {
+      if (res.error) return [];
+      return res.data.map(function (r) {
+        return { username: r.username, role: r.role, realName: r.real_name, createdAt: r.created_at, lastLogin: r.last_login };
+      });
     });
   }
 
@@ -270,96 +263,150 @@
   }
 
   /* ═══════════════════════════════════════════
-     核心业务逻辑
+     核心业务逻辑（Supabase 优先，本地后备）
      ═══════════════════════════════════════════ */
 
-  function doLogin(username, password) {
+  function doLoginSync(username, password) {
     var lockRemaining = getLockoutRemaining();
-    if (lockRemaining > 0) return { success: false, message: '登录失败次数过多，请 ' + lockRemaining + ' 秒后重试' };
-    if (!username || !password) return { success: false, message: '请输入用户名和密码' };
-
-    var users = getUsersLocal();
-    var user = null;
-    for (var i = 0; i < users.length; i++) { if (users[i].username === username) { user = users[i]; break; } }
-    if (!user) { recordFailedAttempt(); return { success: false, message: '用户名或密码错误' }; }
+    if (lockRemaining > 0) return Promise.resolve({ success: false, message: '登录失败次数过多，请 ' + lockRemaining + ' 秒后重试' });
+    if (!username || !password) return Promise.resolve({ success: false, message: '请输入用户名和密码' });
 
     var inputHash = sha256(password);
-    if (inputHash !== user.passwordHash) { recordFailedAttempt(); return { success: false, message: '用户名或密码错误' }; }
+    var sb = getSupabase();
 
-    resetRateLimit();
-
-    // 更新 lastLogin
-    for (i = 0; i < users.length; i++) { if (users[i].username === username) { users[i].lastLogin = new Date().toISOString(); break; } }
-    saveUsersLocal(users);
-
-    return { success: true, session: createSession(user) };
+    if (sb) {
+      // Supabase 模式
+      return sbFetchUser(username).then(function (user) {
+        if (!user) { recordFailedAttempt(); return { success: false, message: '用户名或密码错误' }; }
+        if (inputHash !== user.passwordHash) { recordFailedAttempt(); return { success: false, message: '用户名或密码错误' }; }
+        resetRateLimit();
+        sbUpdateLastLogin(username);
+        return { success: true, session: createSession(user) };
+      });
+    } else {
+      // 本地模式（后备）
+      var users = getUsersLocal();
+      var user = null;
+      for (var i = 0; i < users.length; i++) { if (users[i].username === username) { user = users[i]; break; } }
+      if (!user) { recordFailedAttempt(); return Promise.resolve({ success: false, message: '用户名或密码错误' }); }
+      if (inputHash !== user.passwordHash) { recordFailedAttempt(); return Promise.resolve({ success: false, message: '用户名或密码错误' }); }
+      resetRateLimit();
+      for (i = 0; i < users.length; i++) { if (users[i].username === username) { users[i].lastLogin = new Date().toISOString(); break; } }
+      saveUsersLocal(users);
+      return Promise.resolve({ success: true, session: createSession(user) });
+    }
   }
 
   function doLogout(reason) { destroySession(); if (inactivityTimer) clearTimeout(inactivityTimer); showLoginOverlay(); showLoginError(reason || ''); }
 
   function doChangePassword(oldPwd, newPwd) {
-    var session = getSession(); if (!session) return '未登录'; if (newPwd.length < MIN_PASSWORD_LENGTH) return '密码长度不能少于 ' + MIN_PASSWORD_LENGTH + ' 位';
-    var users = getUsersLocal();
-    var idx = -1; for (var i = 0; i < users.length; i++) { if (users[i].username === session.username) { idx = i; break; } }
-    if (idx === -1) return '用户不存在';
-    if (sha256(oldPwd) !== users[idx].passwordHash) return '当前密码不正确';
-    users[idx].passwordHash = sha256(newPwd); saveUsersLocal(users);
-    exportUsersJSON(users); // 同步到云端
-    return true;
+    var session = getSession(); if (!session) return Promise.resolve('未登录');
+    if (newPwd.length < MIN_PASSWORD_LENGTH) return Promise.resolve('密码长度不能少于 ' + MIN_PASSWORD_LENGTH + ' 位');
+
+    var oldHash = sha256(oldPwd);
+    var newHash = sha256(newPwd);
+    var sb = getSupabase();
+
+    if (sb) {
+      return sbFetchUser(session.username).then(function (user) {
+        if (!user) return '用户不存在';
+        if (oldHash !== user.passwordHash) return '当前密码不正确';
+        return sbUpdatePassword(session.username, newHash).then(function (ok) {
+          return ok ? true : '密码更新失败';
+        });
+      });
+    } else {
+      var users = getUsersLocal();
+      var idx = -1; for (var i = 0; i < users.length; i++) { if (users[i].username === session.username) { idx = i; break; } }
+      if (idx === -1) return Promise.resolve('用户不存在');
+      if (oldHash !== users[idx].passwordHash) return Promise.resolve('当前密码不正确');
+      users[idx].passwordHash = newHash; saveUsersLocal(users);
+      return Promise.resolve(true);
+    }
   }
 
   function doAddUser(data) {
-    var session = getSession(); if (!session || session.role !== 'admin') return '权限不足';
-    var username = (data.username || '').trim(); var realName = (data.realName || '').trim();
-    var password = (data.password || '').trim(); var role = data.role === 'admin' ? 'admin' : 'user';
-    if (!username || !realName || !password) return '请填写所有字段';
-    if (password.length < MIN_PASSWORD_LENGTH) return '密码长度不能少于 ' + MIN_PASSWORD_LENGTH + ' 位';
-    if (findUserLocal(username)) return '用户名 "' + username + '" 已存在';
+    var session = getSession(); if (!session || session.role !== 'admin') return Promise.resolve('权限不足');
+    var username = (data.username || '').trim();
+    var realName = (data.realName || '').trim();
+    var password = (data.password || '').trim();
+    var role = data.role === 'admin' ? 'admin' : 'user';
+    if (!username || !realName || !password) return Promise.resolve('请填写所有字段');
+    if (password.length < MIN_PASSWORD_LENGTH) return Promise.resolve('密码长度不能少于 ' + MIN_PASSWORD_LENGTH + ' 位');
 
-    var users = getUsersLocal();
-    users.push({ username: username, passwordHash: sha256(password), role: role, realName: realName, createdAt: new Date().toISOString(), lastLogin: null });
-    saveUsersLocal(users);
-    exportUsersJSON(users); // 同步到云端
-    return true;
+    var sb = getSupabase();
+    if (sb) {
+      return sbInsertUser({ username: username, passwordHash: sha256(password), role: role, realName: realName }).then(function (res) {
+        if (!res.ok) {
+          if (res.error.indexOf('duplicate') !== -1 || res.error.indexOf('unique') !== -1) return '用户名 "' + username + '" 已存在';
+          return res.error;
+        }
+        return true;
+      });
+    } else {
+      if (findUserLocal(username)) return Promise.resolve('用户名 "' + username + '" 已存在');
+      var users = getUsersLocal();
+      users.push({ username: username, passwordHash: sha256(password), role: role, realName: realName, createdAt: new Date().toISOString(), lastLogin: null });
+      saveUsersLocal(users);
+      return Promise.resolve(true);
+    }
   }
 
   function doDeleteUser(username) {
-    var session = getSession(); if (!session || session.role !== 'admin') return '权限不足';
-    if (username === 'admin') return '不能删除管理员账户';
-    if (username === session.username) return '不能删除当前登录的用户';
-    var users = getUsersLocal();
-    var idx = -1; for (var i = 0; i < users.length; i++) { if (users[i].username === username) { idx = i; break; } }
-    if (idx === -1) return '用户不存在';
-    users.splice(idx, 1); saveUsersLocal(users);
-    exportUsersJSON(users); // 同步到云端
-    return true;
+    var session = getSession(); if (!session || session.role !== 'admin') return Promise.resolve('权限不足');
+    if (username === 'admin') return Promise.resolve('不能删除管理员账户');
+    if (username === session.username) return Promise.resolve('不能删除当前登录的用户');
+
+    var sb = getSupabase();
+    if (sb) {
+      return sbDeleteUser(username).then(function (ok) {
+        return ok ? true : '删除失败';
+      });
+    } else {
+      var users = getUsersLocal();
+      var idx = -1; for (var i = 0; i < users.length; i++) { if (users[i].username === username) { idx = i; break; } }
+      if (idx === -1) return Promise.resolve('用户不存在');
+      users.splice(idx, 1); saveUsersLocal(users);
+      return Promise.resolve(true);
+    }
   }
 
   function doResetPassword(username, newPwd) {
-    var session = getSession(); if (!session || session.role !== 'admin') return '权限不足';
-    if (newPwd.length < MIN_PASSWORD_LENGTH) return '密码长度不能少于 ' + MIN_PASSWORD_LENGTH + ' 位';
-    var users = getUsersLocal();
-    var idx = -1; for (var i = 0; i < users.length; i++) { if (users[i].username === username) { idx = i; break; } }
-    if (idx === -1) return '用户不存在';
-    users[idx].passwordHash = sha256(newPwd); saveUsersLocal(users);
-    exportUsersJSON(users); // 同步到云端
-    return true;
+    var session = getSession(); if (!session || session.role !== 'admin') return Promise.resolve('权限不足');
+    if (newPwd.length < MIN_PASSWORD_LENGTH) return Promise.resolve('密码长度不能少于 ' + MIN_PASSWORD_LENGTH + ' 位');
+    var newHash = sha256(newPwd);
+    var sb = getSupabase();
+    if (sb) {
+      return sbUpdatePassword(username, newHash).then(function (ok) {
+        return ok ? true : '重置密码失败';
+      });
+    } else {
+      var users = getUsersLocal();
+      var idx = -1; for (var i = 0; i < users.length; i++) { if (users[i].username === username) { idx = i; break; } }
+      if (idx === -1) return Promise.resolve('用户不存在');
+      users[idx].passwordHash = newHash; saveUsersLocal(users);
+      return Promise.resolve(true);
+    }
   }
 
   function doGetAllUsers() {
-    var session = getSession(); if (!session || session.role !== 'admin') return null;
-    return getUsersLocal().map(function (u) { return { username: u.username, role: u.role, realName: u.realName, createdAt: u.createdAt, lastLogin: u.lastLogin }; });
+    var session = getSession(); if (!session || session.role !== 'admin') return Promise.resolve(null);
+    var sb = getSupabase();
+    if (sb) {
+      return sbFetchAllUsers();
+    } else {
+      return Promise.resolve(getUsersLocal().map(function (u) { return { username: u.username, role: u.role, realName: u.realName, createdAt: u.createdAt, lastLogin: u.lastLogin }; }));
+    }
   }
 
   /* ═══════════════════════════════════════════
-     登录处理（先同步云端再验证）
+     登录处理
      ═══════════════════════════════════════════ */
 
   var isLoginSubmitting = false;
-  var _isSyncing = false;
 
   function handleLogin() {
-    if (isLoginSubmitting || _isSyncing) return;
+    if (isLoginSubmitting) return;
     isLoginSubmitting = true;
 
     var usernameEl = document.getElementById('auth-username');
@@ -368,15 +415,10 @@
     var username = usernameEl.value.trim();
     var password = passwordEl.value;
 
-    // 先尝试从云端同步，再登录
-    _isSyncing = true;
-    showSyncStatus('正在验证，请稍候...');
+    showSyncStatus('正在验证...');
 
-    fetchCloudUsers().then(function () {
-      _isSyncing = false;
+    doLoginSync(username, password).then(function (result) {
       showSyncStatus('');
-
-      var result = doLogin(username, password);
       if (result.success) {
         showLoginError('');
         usernameEl.value = ''; passwordEl.value = '';
@@ -385,18 +427,9 @@
         showLoginError(result.message);
       }
       isLoginSubmitting = false;
-    }).catch(function () {
-      _isSyncing = false;
+    }).catch(function (err) {
       showSyncStatus('');
-      // 即使同步失败，也用本地数据登录
-      var result = doLogin(username, password);
-      if (result.success) {
-        showLoginError('');
-        usernameEl.value = ''; passwordEl.value = '';
-        hideLoginOverlay(); updateHeaderUI(result.session); resetInactivityTimer();
-      } else {
-        showLoginError(result.message);
-      }
+      showLoginError('网络错误，请检查连接后重试');
       isLoginSubmitting = false;
     });
   }
@@ -430,41 +463,46 @@
       if (!o||!n||!c) { errEl.textContent = '请填写所有字段'; return; }
       if (n.length < MIN_PASSWORD_LENGTH) { errEl.textContent = '新密码长度不能少于 ' + MIN_PASSWORD_LENGTH + ' 位'; return; }
       if (n !== c) { errEl.textContent = '两次输入的新密码不一致'; return; }
-      var result = doChangePassword(o, n);
-      if (result === true) { dialog.remove(); showInlineMessage('密码修改成功'); }
-      else { errEl.textContent = result; }
+      errEl.textContent = '处理中...';
+      doChangePassword(o, n).then(function (result) {
+        if (result === true) { dialog.remove(); showInlineMessage('密码修改成功'); }
+        else { errEl.textContent = result; }
+      });
     });
   }
 
   /* ═══════════════════════════════════════════
-     管理员面板
+     管理员面板（异步渲染）
      ═══════════════════════════════════════════ */
 
   function renderAdminPanel() {
     var container = document.getElementById('admin-users-list'); if (!container) return;
-    var users = getUsersLocal();
-    if (users.length === 0) { container.innerHTML = '<p style="color:#888;">暂无用户数据</p>'; return; }
+    container.innerHTML = '<p style="color:#888;">加载中...</p>';
     var currentSession = getSession();
-    var html = '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;">';
-    html += '<thead><tr style="border-bottom:2px solid #4a6741;color:#4a6741;">' +
-      '<th style="text-align:left;padding:8px 4px;">用户名</th><th style="text-align:left;padding:8px 4px;">姓名</th>' +
-      '<th style="text-align:left;padding:8px 4px;">角色</th><th style="text-align:left;padding:8px 4px;">上次登录</th>' +
-      '<th style="text-align:right;padding:8px 4px;">操作</th></tr></thead><tbody>';
-    users.forEach(function (u) {
-      var isSelf = currentSession && currentSession.username === u.username;
-      var ll = u.lastLogin ? new Date(u.lastLogin).toLocaleString('zh-CN') : '从未登录';
-      html += '<tr style="border-bottom:1px solid #eee;"><td style="padding:8px 4px;">' + escapeHtml(u.username) + '</td>' +
-        '<td style="padding:8px 4px;">' + escapeHtml(u.realName || '-') + '</td>' +
-        '<td style="padding:8px 4px;">' + (u.role === 'admin' ? '管理员' : '普通用户') + '</td>' +
-        '<td style="padding:8px 4px;color:#888;font-size:0.8rem;">' + ll + '</td><td style="padding:8px 4px;text-align:right;">';
-      if (!isSelf) html += '<button class="admin-reset-pwd-btn" data-username="' + escapeHtml(u.username) + '" style="margin-left:4px;padding:3px 8px;font-size:0.8rem;border:1px solid #e67e22;color:#e67e22;background:#fff;border-radius:3px;cursor:pointer;">重置密码</button>';
-      if (u.username !== 'admin' && !isSelf) html += '<button class="admin-delete-user-btn" data-username="' + escapeHtml(u.username) + '" style="margin-left:4px;padding:3px 8px;font-size:0.8rem;border:1px solid #c0392b;color:#c0392b;background:#fff;border-radius:3px;cursor:pointer;">删除</button>';
-      html += '</td></tr>';
+
+    doGetAllUsers().then(function (users) {
+      if (!users || users.length === 0) { container.innerHTML = '<p style="color:#888;">暂无用户数据</p>'; return; }
+      var html = '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;">';
+      html += '<thead><tr style="border-bottom:2px solid #4a6741;color:#4a6741;">' +
+        '<th style="text-align:left;padding:8px 4px;">用户名</th><th style="text-align:left;padding:8px 4px;">姓名</th>' +
+        '<th style="text-align:left;padding:8px 4px;">角色</th><th style="text-align:left;padding:8px 4px;">上次登录</th>' +
+        '<th style="text-align:right;padding:8px 4px;">操作</th></tr></thead><tbody>';
+      users.forEach(function (u) {
+        var isSelf = currentSession && currentSession.username === u.username;
+        var ll = u.lastLogin ? new Date(u.lastLogin).toLocaleString('zh-CN') : '从未登录';
+        html += '<tr style="border-bottom:1px solid #eee;"><td style="padding:8px 4px;">' + escapeHtml(u.username) + '</td>' +
+          '<td style="padding:8px 4px;">' + escapeHtml(u.realName || '-') + '</td>' +
+          '<td style="padding:8px 4px;">' + (u.role === 'admin' ? '管理员' : '普通用户') + '</td>' +
+          '<td style="padding:8px 4px;color:#888;font-size:0.8rem;">' + ll + '</td><td style="padding:8px 4px;text-align:right;">';
+        if (!isSelf) html += '<button class="admin-reset-pwd-btn" data-username="' + escapeHtml(u.username) + '" style="margin-left:4px;padding:3px 8px;font-size:0.8rem;border:1px solid #e67e22;color:#e67e22;background:#fff;border-radius:3px;cursor:pointer;">重置密码</button>';
+        if (u.username !== 'admin' && !isSelf) html += '<button class="admin-delete-user-btn" data-username="' + escapeHtml(u.username) + '" style="margin-left:4px;padding:3px 8px;font-size:0.8rem;border:1px solid #c0392b;color:#c0392b;background:#fff;border-radius:3px;cursor:pointer;">删除</button>';
+        html += '</td></tr>';
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+      container.querySelectorAll('.admin-reset-pwd-btn').forEach(function (btn) { btn.addEventListener('click', function () { showResetPasswordDialog(this.getAttribute('data-username')); }); });
+      container.querySelectorAll('.admin-delete-user-btn').forEach(function (btn) { btn.addEventListener('click', function () { showDeleteConfirmDialog(this.getAttribute('data-username')); }); });
     });
-    html += '</tbody></table>';
-    container.innerHTML = html;
-    container.querySelectorAll('.admin-reset-pwd-btn').forEach(function (btn) { btn.addEventListener('click', function () { showResetPasswordDialog(this.getAttribute('data-username')); }); });
-    container.querySelectorAll('.admin-delete-user-btn').forEach(function (btn) { btn.addEventListener('click', function () { showDeleteConfirmDialog(this.getAttribute('data-username')); }); });
   }
 
   function showAdminPanel() { var o = document.getElementById('admin-panel-overlay'); if (o) { o.style.display = 'flex'; renderAdminPanel(); } }
@@ -472,29 +510,35 @@
 
   function handleAddUser(e) {
     e.preventDefault();
-    var result = doAddUser({
+    var btn = e.target.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = true;
+    var err = document.getElementById('admin-add-error');
+    if (err) err.textContent = '添加中...';
+
+    doAddUser({
       username: (document.getElementById('admin-new-username') || {}).value || '',
       realName: (document.getElementById('admin-new-realname') || {}).value || '',
       password: (document.getElementById('admin-new-password') || {}).value || '',
       role: (document.getElementById('admin-new-role') || {}).value || 'user'
+    }).then(function (result) {
+      if (btn) btn.disabled = false;
+      if (result === true) {
+        var els = ['admin-new-username','admin-new-realname','admin-new-password'];
+        els.forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
+        var r = document.getElementById('admin-new-role'); if (r) r.value = 'user';
+        if (err) err.textContent = '';
+        renderAdminPanel(); showInlineMessage('用户添加成功');
+      } else {
+        if (err) err.textContent = result;
+      }
     });
-    if (result === true) {
-      var els = ['admin-new-username','admin-new-realname','admin-new-password'];
-      els.forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
-      var r = document.getElementById('admin-new-role'); if (r) r.value = 'user';
-      var err = document.getElementById('admin-add-error'); if (err) err.textContent = '';
-      renderAdminPanel(); showInlineMessage('用户添加成功（已同步到云端）');
-    } else {
-      var err = document.getElementById('admin-add-error'); if (err) err.textContent = result;
-    }
   }
 
   function showResetPasswordDialog(username) {
     var dialog = document.createElement('div');
     dialog.style.cssText = 'position:fixed;inset:0;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);';
-    var user = findUserLocal(username);
     dialog.innerHTML = '<div style="background:#fff;padding:2rem;border-radius:8px;width:360px;max-width:90vw;">' +
-      '<h3 style="margin:0 0 1rem;font-size:1.1rem;">重置密码 — ' + escapeHtml(user ? (user.realName||user.username) : username) + '</h3>' +
+      '<h3 style="margin:0 0 1rem;font-size:1.1rem;">重置密码 — ' + escapeHtml(username) + '</h3>' +
       '<div id="auth-reset-pwd-error" style="color:#c0392b;font-size:0.85rem;margin-bottom:0.5rem;min-height:1.2em;"></div>' +
       '<label style="display:block;margin-bottom:1rem;font-size:0.9rem;">新密码（至少 6 位）<input type="password" id="auth-rp-new" style="display:block;width:100%;margin-top:4px;padding:6px 8px;box-sizing:border-box;border:1px solid #ccc;border-radius:4px;"></label>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
@@ -507,18 +551,19 @@
     dialog.querySelector('#auth-rp-ok').addEventListener('click', function () {
       var n = document.getElementById('auth-rp-new').value.trim();
       if (n.length < MIN_PASSWORD_LENGTH) { errEl.textContent = '密码长度不能少于 ' + MIN_PASSWORD_LENGTH + ' 位'; return; }
-      var result = doResetPassword(username, n);
-      if (result === true) { dialog.remove(); showInlineMessage('已重置 "' + username + '" 的密码（已同步）'); }
-      else { errEl.textContent = result || '操作失败'; }
+      errEl.textContent = '处理中...';
+      doResetPassword(username, n).then(function (result) {
+        if (result === true) { dialog.remove(); showInlineMessage('已重置 "' + username + '" 的密码'); }
+        else { errEl.textContent = result || '操作失败'; }
+      });
     });
   }
 
   function showDeleteConfirmDialog(username) {
     var dialog = document.createElement('div');
     dialog.style.cssText = 'position:fixed;inset:0;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);';
-    var user = findUserLocal(username);
     dialog.innerHTML = '<div style="background:#fff;padding:2rem;border-radius:8px;width:340px;max-width:90vw;text-align:center;">' +
-      '<p style="font-size:1rem;margin:0 0 1.5rem;">确定要删除用户 <strong>' + escapeHtml(user?(user.realName||user.username):username) + '</strong> 吗？<br><span style="color:#888;font-size:0.85rem;">此操作不可撤销</span></p>' +
+      '<p style="font-size:1rem;margin:0 0 1.5rem;">确定要删除用户 <strong>' + escapeHtml(username) + '</strong> 吗？<br><span style="color:#888;font-size:0.85rem;">此操作不可撤销</span></p>' +
       '<div style="display:flex;gap:8px;justify-content:center;">' +
         '<button id="auth-del-cancel" style="padding:6px 20px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;">取消</button>' +
         '<button id="auth-del-ok" style="padding:6px 20px;border:none;border-radius:4px;background:#c0392b;color:#fff;cursor:pointer;">确认删除</button>' +
@@ -526,9 +571,11 @@
     document.body.appendChild(dialog);
     dialog.querySelector('#auth-del-cancel').addEventListener('click', function () { dialog.remove(); });
     dialog.querySelector('#auth-del-ok').addEventListener('click', function () {
-      var result = doDeleteUser(username); dialog.remove();
-      if (result === true) { renderAdminPanel(); showInlineMessage('已删除用户 "' + username + '"（已同步）'); }
-      else { showInlineMessage(result || '删除失败'); }
+      dialog.remove();
+      doDeleteUser(username).then(function (result) {
+        if (result === true) { renderAdminPanel(); showInlineMessage('已删除用户 "' + username + '"'); }
+        else { showInlineMessage(result || '删除失败'); }
+      });
     });
   }
 
@@ -561,14 +608,19 @@
      ═══════════════════════════════════════════ */
 
   function init() {
-    ensureDefaultAdmin();
-
     // 清除旧锁定
     sessionStorage.removeItem(ATTEMPTS_KEY);
     sessionStorage.removeItem(LOCKOUT_KEY);
 
-    // 从云端同步用户数据
-    syncFromCloud();
+    var sb = getSupabase();
+    if (sb) {
+      console.log('[Auth] v3 已连接 Supabase — 云端模式');
+      showSyncStatus('已连接云端数据库');
+      setTimeout(function () { showSyncStatus(''); }, 2000);
+    } else {
+      console.log('[Auth] v3 Supabase 未配置 — 本地模式');
+      ensureDefaultAdmin();
+    }
 
     // 检查会话
     var session = getSession();
@@ -580,12 +632,12 @@
   }
 
   /* ═══════════════════════════════════════════
-     公共接口
+     公共接口（与 v2 完全兼容）
      ═══════════════════════════════════════════ */
 
   window.AuthSystem = {
     init: init,
-    login: function (u, p) { return doLogin(u, p); },
+    login: function (u, p) { return doLoginSync(u, p); },
     logout: function () { doLogout(); },
     changePassword: function (o, n) { return doChangePassword(o, n); },
     isAdmin: function () { var s = getSession(); return s && s.role === 'admin'; },
