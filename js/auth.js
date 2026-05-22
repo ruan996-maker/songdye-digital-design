@@ -137,6 +137,7 @@
         passwordHash: res.data.password_hash,
         role: res.data.role,
         realName: res.data.real_name,
+        importEnabled: !!res.data.import_enabled,
         createdAt: res.data.created_at,
         lastLogin: res.data.last_login
       };
@@ -187,7 +188,7 @@
     return sb.from('users').select('*').order('created_at', { ascending: true }).then(function (res) {
       if (res.error) return [];
       return res.data.map(function (r) {
-        return { username: r.username, role: r.role, realName: r.real_name, createdAt: r.created_at, lastLogin: r.last_login };
+        return { username: r.username, role: r.role, realName: r.real_name, importEnabled: !!r.import_enabled, createdAt: r.created_at, lastLogin: r.last_login };
       });
     });
   }
@@ -197,7 +198,7 @@
      ═══════════════════════════════════════════ */
 
   function createSession(user) {
-    var session = { username: user.username, role: user.role, realName: user.realName, loginAt: Date.now() };
+    var session = { username: user.username, role: user.role, realName: user.realName, importEnabled: !!user.importEnabled, loginAt: Date.now() };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
     return session;
   }
@@ -395,7 +396,62 @@
     if (sb) {
       return sbFetchAllUsers();
     } else {
-      return Promise.resolve(getUsersLocal().map(function (u) { return { username: u.username, role: u.role, realName: u.realName, createdAt: u.createdAt, lastLogin: u.lastLogin }; }));
+      return Promise.resolve(getUsersLocal().map(function (u) { return { username: u.username, role: u.role, realName: u.realName, importEnabled: !!u.importEnabled, createdAt: u.createdAt, lastLogin: u.lastLogin }; }));
+    }
+  }
+
+  /* ═══════════════════════════════════════════
+     素材导入权限管理
+     ═══════════════════════════════════════════ */
+
+  function doCheckImportPermission() {
+    var session = getSession();
+    if (!session) return false;
+    if (session.role === 'admin') return true;
+    return !!session.importEnabled;
+  }
+
+  function doToggleImportPermission(username, enabled) {
+    var session = getSession(); if (!session || session.role !== 'admin') return Promise.resolve('权限不足');
+    if (username === 'admin') return Promise.resolve('管理员默认拥有所有权限');
+    var sb = getSupabase();
+    if (sb) {
+      return sb.from('users').update({ import_enabled: !!enabled }).eq('username', username).then(function (res) {
+        return !res.error ? true : '更新失败';
+      });
+    } else {
+      var users = getUsersLocal();
+      var idx = -1; for (var i = 0; i < users.length; i++) { if (users[i].username === username) { idx = i; break; } }
+      if (idx === -1) return Promise.resolve('用户不存在');
+      users[idx].importEnabled = !!enabled;
+      saveUsersLocal(users);
+      return Promise.resolve(true);
+    }
+  }
+
+  function doRefreshSessionPermission() {
+    var session = getSession();
+    if (!session || session.role === 'admin') return Promise.resolve();
+    var sb = getSupabase();
+    if (sb) {
+      return sbFetchUser(session.username).then(function (user) {
+        if (user) {
+          session.importEnabled = user.importEnabled;
+          sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+          updateImportUI();
+        }
+      });
+    }
+    return Promise.resolve();
+  }
+
+  function updateImportUI() {
+    var allowed = doCheckImportPermission();
+    var btnImport = document.getElementById('btn-import-img');
+    if (btnImport) {
+      btnImport.disabled = !allowed;
+      btnImport.title = allowed ? '导入素材' : '您没有素材导入权限，请联系管理员';
+      btnImport.style.opacity = allowed ? '1' : '0.5';
     }
   }
 
@@ -485,15 +541,24 @@
       var html = '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;">';
       html += '<thead><tr style="border-bottom:2px solid #4a6741;color:#4a6741;">' +
         '<th style="text-align:left;padding:8px 4px;">用户名</th><th style="text-align:left;padding:8px 4px;">姓名</th>' +
-        '<th style="text-align:left;padding:8px 4px;">角色</th><th style="text-align:left;padding:8px 4px;">上次登录</th>' +
+        '<th style="text-align:left;padding:8px 4px;">角色</th><th style="text-align:center;padding:8px 4px;">导入权限</th>' +
+        '<th style="text-align:left;padding:8px 4px;">上次登录</th>' +
         '<th style="text-align:right;padding:8px 4px;">操作</th></tr></thead><tbody>';
       users.forEach(function (u) {
         var isSelf = currentSession && currentSession.username === u.username;
         var ll = u.lastLogin ? new Date(u.lastLogin).toLocaleString('zh-CN') : '从未登录';
+        var isAdmin = u.role === 'admin';
+        var hasImport = isAdmin || u.importEnabled;
         html += '<tr style="border-bottom:1px solid #eee;"><td style="padding:8px 4px;">' + escapeHtml(u.username) + '</td>' +
           '<td style="padding:8px 4px;">' + escapeHtml(u.realName || '-') + '</td>' +
-          '<td style="padding:8px 4px;">' + (u.role === 'admin' ? '管理员' : '普通用户') + '</td>' +
-          '<td style="padding:8px 4px;color:#888;font-size:0.8rem;">' + ll + '</td><td style="padding:8px 4px;text-align:right;">';
+          '<td style="padding:8px 4px;">' + (isAdmin ? '管理员' : '普通用户') + '</td>' +
+          '<td style="padding:8px 4px;text-align:center;">';
+        if (isAdmin) {
+          html += '<span style="color:#4a6741;font-size:0.8rem;">默认拥有</span>';
+        } else {
+          html += '<button class="admin-import-toggle-btn" data-username="' + escapeHtml(u.username) + '" data-enabled="' + (hasImport ? '1' : '0') + '" style="padding:2px 10px;font-size:0.8rem;border-radius:12px;cursor:pointer;border:1px solid ' + (hasImport ? '#4a6741' : '#ccc') + ';color:' + (hasImport ? '#fff' : '#888') + ';background:' + (hasImport ? '#4a6741' : '#fff') + ';">' + (hasImport ? '已授权' : '未授权') + '</button>';
+        }
+        html += '</td><td style="padding:8px 4px;color:#888;font-size:0.8rem;">' + ll + '</td><td style="padding:8px 4px;text-align:right;">';
         if (!isSelf) html += '<button class="admin-reset-pwd-btn" data-username="' + escapeHtml(u.username) + '" style="margin-left:4px;padding:3px 8px;font-size:0.8rem;border:1px solid #e67e22;color:#e67e22;background:#fff;border-radius:3px;cursor:pointer;">重置密码</button>';
         if (u.username !== 'admin' && !isSelf) html += '<button class="admin-delete-user-btn" data-username="' + escapeHtml(u.username) + '" style="margin-left:4px;padding:3px 8px;font-size:0.8rem;border:1px solid #c0392b;color:#c0392b;background:#fff;border-radius:3px;cursor:pointer;">删除</button>';
         html += '</td></tr>';
@@ -502,6 +567,26 @@
       container.innerHTML = html;
       container.querySelectorAll('.admin-reset-pwd-btn').forEach(function (btn) { btn.addEventListener('click', function () { showResetPasswordDialog(this.getAttribute('data-username')); }); });
       container.querySelectorAll('.admin-delete-user-btn').forEach(function (btn) { btn.addEventListener('click', function () { showDeleteConfirmDialog(this.getAttribute('data-username')); }); });
+      container.querySelectorAll('.admin-import-toggle-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var uname = this.getAttribute('data-username');
+          var curEnabled = this.getAttribute('data-enabled') === '1';
+          var newEnabled = !curEnabled;
+          var self = this;
+          doToggleImportPermission(uname, newEnabled).then(function (res) {
+            if (res === true) {
+              self.setAttribute('data-enabled', newEnabled ? '1' : '0');
+              self.textContent = newEnabled ? '已授权' : '未授权';
+              self.style.background = newEnabled ? '#4a6741' : '#fff';
+              self.style.color = newEnabled ? '#fff' : '#888';
+              self.style.borderColor = newEnabled ? '#4a6741' : '#ccc';
+              showInlineMessage((newEnabled ? '已授权' : '已撤销') + ' "' + uname + '" 的素材导入权限');
+            } else {
+              showInlineMessage(res || '操作失败');
+            }
+          });
+        });
+      });
     });
   }
 
@@ -624,7 +709,7 @@
 
     // 检查会话
     var session = getSession();
-    if (session) { hideLoginOverlay(); updateHeaderUI(session); resetInactivityTimer(); }
+    if (session) { hideLoginOverlay(); updateHeaderUI(session); resetInactivityTimer(); updateImportUI(); doRefreshSessionPermission(); }
     else { showLoginOverlay(); }
 
     bindEvents();
@@ -641,11 +726,14 @@
     logout: function () { doLogout(); },
     changePassword: function (o, n) { return doChangePassword(o, n); },
     isAdmin: function () { var s = getSession(); return s && s.role === 'admin'; },
-    getCurrentUser: function () { var s = getSession(); return s ? { username: s.username, role: s.role, realName: s.realName } : null; },
+    getCurrentUser: function () { var s = getSession(); return s ? { username: s.username, role: s.role, realName: s.realName, importEnabled: s.importEnabled } : null; },
     addUser: function (d) { return doAddUser(d); },
     deleteUser: function (u) { return doDeleteUser(u); },
     resetPassword: function (u, p) { return doResetPassword(u, p); },
-    getAllUsers: function () { return doGetAllUsers(); }
+    getAllUsers: function () { return doGetAllUsers(); },
+    canImport: function () { return doCheckImportPermission(); },
+    toggleImportPermission: function (u, e) { return doToggleImportPermission(u, e); },
+    refreshPermission: function () { return doRefreshSessionPermission(); }
   };
 
   // 自动初始化
