@@ -148,21 +148,33 @@
                 <h2>纹样图库管理</h2>
                 <p class="module-desc">传统宋染纹样数字化典藏与程序化生成</p>
             </div>
+            <!-- 搜索栏 -->
+            <div class="search-bar">
+                <span class="search-icon">⌕</span>
+                <input type="text" id="pattern-search" placeholder="搜索纹样名称..." maxlength="50">
+            </div>
             <div class="module-toolbar">
-                <div class="filter-group">
-                    <button class="filter-btn active" data-category="all">全部纹样</button>
-                    <button class="filter-btn" data-category="plant">植物纹</button>
-                    <button class="filter-btn" data-category="geometric">几何纹</button>
-                    <button class="filter-btn" data-category="nature">自然纹</button>
-                    <button class="filter-btn" data-category="abstract">抽象纹</button>
-                    <button class="filter-btn" data-category="imported">导入素材</button>
+                <div class="filter-group" id="filter-group">
+                    <!-- 分类按钮由 JS 动态生成（预设 + 自定义分类） -->
                 </div>
                 <div class="action-group">
+                    <button class="btn btn-outline" id="btn-manage-mode" style="display:none">管理模式</button>
+                    <button class="btn btn-outline btn-manage-action hidden" id="btn-select-all" style="display:none">全选</button>
+                    <button class="btn btn-danger btn-manage-action hidden" id="btn-batch-delete" style="display:none">批量删除</button>
+                    <select class="batch-move-select hidden" id="batch-move-select" style="display:none">
+                        <option value="">批量移动到...</option>
+                    </select>
                     <button class="btn btn-primary" id="btn-generate">程序化生成</button>
                     <button class="btn btn-secondary" id="btn-import-img">导入素材</button>
                     <button class="btn btn-secondary" id="btn-export-all">批量导出</button>
                     <input type="file" id="import-file-input" accept="image/*" multiple hidden>
                 </div>
+            </div>
+            <!-- 新建分类输入框（隐藏） -->
+            <div class="new-category-bar hidden" id="new-category-bar">
+                <input type="text" id="new-category-input" placeholder="输入新分类名称（如：花布）" maxlength="10">
+                <button class="btn btn-small btn-primary" id="btn-add-category">添加</button>
+                <button class="btn btn-small btn-secondary" id="btn-cancel-category">取消</button>
             </div>
             <div class="pattern-grid" id="pattern-grid">
                 <!-- 纹样卡片由 JS 动态生成 -->
@@ -193,7 +205,9 @@
                     <button class="modal-close">&times;</button>
                     <div class="modal-header">
                         <h3 id="modal-pattern-name" class="editable-name" title="点击编辑名称">纹样名称</h3>
-                        <span class="modal-tag" id="modal-pattern-category">分类</span>
+                        <select id="modal-pattern-category" class="modal-category-select">
+                            <!-- 由 JS 动态填充 -->
+                        </select>
                     </div>
                     <div class="modal-body">
                         <div class="modal-preview">
@@ -219,6 +233,8 @@
                         </div>
                     </div>
                     <div class="modal-footer">
+                        <button class="btn btn-danger" id="btn-modal-delete" style="display:none">删除素材</button>
+                        <div style="flex:1"></div>
                         <button class="btn btn-primary" id="btn-modal-export">导出 PNG</button>
                         <button class="btn btn-secondary" id="btn-modal-apply-preview">应用到 3D 预览</button>
                     </div>
