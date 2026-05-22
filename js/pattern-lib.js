@@ -1083,8 +1083,23 @@
   //  图片素材导入
   // ══════════════════════════════════════════════════════
 
+  function showImportMsg(text) {
+    var msg = document.createElement('div');
+    msg.textContent = text;
+    msg.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:20000;background:#c0392b;color:#fff;padding:10px 24px;border-radius:6px;font-size:0.95rem;box-shadow:0 2px 12px rgba(0,0,0,0.15);transition:opacity 0.3s;';
+    document.body.appendChild(msg);
+    setTimeout(function () { msg.style.opacity = '0'; }, 1800);
+    setTimeout(function () { msg.remove(); }, 2200);
+  }
+
   function handleImageImport(files) {
     if (!files || files.length === 0) return;
+
+    // 权限检查
+    if (window.AuthSystem && !window.AuthSystem.canImport()) {
+      showImportMsg('您没有素材导入权限，请联系管理员授权');
+      return;
+    }
 
     var imported = 0;
     var total = files.length;
@@ -1406,6 +1421,11 @@
     var importFileInput = document.getElementById('import-file-input');
     if (btnImportImg && importFileInput) {
       btnImportImg.addEventListener('click', function () {
+        // 权限检查
+        if (window.AuthSystem && !window.AuthSystem.canImport()) {
+          showImportMsg('您没有素材导入权限，请联系管理员授权');
+          return;
+        }
         importFileInput.value = '';
         importFileInput.click();
       });
@@ -1433,6 +1453,11 @@
         e.preventDefault();
         e.stopPropagation();
         patternGrid.classList.remove('drag-over');
+        // 拖拽导入权限检查
+        if (window.AuthSystem && !window.AuthSystem.canImport()) {
+          showImportMsg('您没有素材导入权限，请联系管理员授权');
+          return;
+        }
         if (e.dataTransfer && e.dataTransfer.files) {
           handleImageImport(e.dataTransfer.files);
         }
