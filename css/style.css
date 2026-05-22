@@ -672,6 +672,15 @@ body {
   border-top: 1px solid var(--border-light);
 }
 
+.editable-name {
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.editable-name:hover {
+  color: var(--ru-cyan);
+}
+
 /* ========== 自定义产品配置弹窗 ========== */
 .form-section {
   background: var(--bg-secondary);
