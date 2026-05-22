@@ -1964,8 +1964,8 @@ body {
 .auth-version {
     text-align: center;
     font-size: 13px;
-    color: #000;
-    margin: 0 0 8px;
+    color: #888;
+    margin: 0 auto 8px;
     letter-spacing: 2px;
 }
 
