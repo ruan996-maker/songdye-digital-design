@@ -1961,6 +1961,14 @@ body {
     font-style: italic;
 }
 
+.auth-version {
+    text-align: center;
+    font-size: 13px;
+    color: #000;
+    margin: 0 0 8px;
+    letter-spacing: 2px;
+}
+
 .auth-sync-status {
     text-align: center;
     font-size: 12px;
