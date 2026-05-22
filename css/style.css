@@ -681,6 +681,171 @@ body {
   color: var(--ru-cyan);
 }
 
+/* ---- 搜索栏 ---- */
+.search-bar {
+  position: relative;
+  margin-bottom: 16px;
+  max-width: 400px;
+}
+.search-bar .search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.search-bar input {
+  width: 100%;
+  padding: 10px 16px 10px 42px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--ding-white);
+  font-size: 14px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  font-family: var(--font-body);
+}
+.search-bar input:focus {
+  border-color: var(--ru-cyan);
+  box-shadow: 0 0 0 3px rgba(124, 181, 176, 0.15);
+}
+
+/* ---- 分类 Badge ---- */
+.cat-badge {
+  display: inline-block;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  font-size: 10px;
+  background: rgba(74, 103, 65, 0.15);
+  color: var(--text-secondary);
+  border-radius: 9px;
+  margin-left: 4px;
+  padding: 0 5px;
+  vertical-align: middle;
+}
+.filter-btn.active .cat-badge {
+  background: rgba(255,255,255,0.3);
+  color: var(--bg-dark);
+}
+
+/* ---- 新建分类栏 ---- */
+.new-category-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+  max-width: 400px;
+}
+.new-category-bar input {
+  flex: 1;
+  padding: 6px 12px;
+  border: 1px solid var(--ru-cyan);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  outline: none;
+  font-family: var(--font-body);
+}
+
+/* ---- 管理模式按钮 ---- */
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: var(--font-body);
+}
+.btn-outline:hover, .btn-outline.active {
+  border-color: var(--ru-cyan);
+  color: var(--ru-cyan);
+  background: rgba(124, 181, 176, 0.08);
+}
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 16px;
+  border: 1px solid #c0392b;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: #c0392b;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: var(--font-body);
+}
+.btn-danger:hover {
+  background: #c0392b;
+  color: #fff;
+}
+
+/* ---- 批量移动 select ---- */
+.batch-move-select {
+  padding: 6px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--ding-white);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+
+/* ---- 卡片 Checkbox ---- */
+.pattern-checkbox {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 20px;
+  height: 20px;
+  z-index: 10;
+  cursor: pointer;
+  accent-color: var(--ru-cyan);
+}
+.pattern-card {
+  position: relative;
+}
+.pattern-card.selected {
+  outline: 3px solid var(--ru-cyan);
+  outline-offset: -3px;
+  border-radius: var(--radius-lg);
+}
+
+/* ---- 分类下拉选择器 ---- */
+.modal-category-select {
+  padding: 4px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.6);
+  color: var(--text-secondary);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+.modal-category-select:focus {
+  border-color: var(--ru-cyan);
+}
+
+/* ---- 添加分类按钮 ---- */
+.filter-btn-add {
+  min-width: 32px;
+  padding: 6px 10px;
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--ru-cyan);
+}
+
 /* ========== 自定义产品配置弹窗 ========== */
 .form-section {
   background: var(--bg-secondary);
