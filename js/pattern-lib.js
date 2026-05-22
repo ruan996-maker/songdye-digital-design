@@ -28,6 +28,89 @@
   //  工具函数
   // ══════════════════════════════════════════════════════
 
+  function getSupabase() {
+    try {
+      if (window.supabase && window.supabase.createClient) {
+        return window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // ── Supabase 配置 ──
+  var SUPABASE_URL = 'https://zrdghzoqzoucguntomcl.supabase.co';
+  var SUPABASE_ANON_KEY = 'sb_publishable_XekzKKriauePN_sb4OwvKg_STXhypDn';
+
+  /**
+   * 保存素材到 Supabase
+   */
+  function saveMaterialToCloud(pat, dataUrl) {
+    var sb = getSupabase();
+    if (!sb) return Promise.resolve();
+    var session = window.AuthSystem ? window.AuthSystem.getCurrentUser() : null;
+    // 缩小图片到 800px 以内以节省存储
+    return resizeDataUrl(dataUrl, 800).then(function (resizedUrl) {
+      return sb.from('materials').insert({
+        name: pat.name,
+        category: 'imported',
+        data_url: resizedUrl,
+        primary_color: pat.primaryColor || '#2c5f7c',
+        secondary_color: pat.secondaryColor || '#8b6914',
+        uploaded_by: session ? session.username : null
+      }).then(function (res) {
+        if (res.error) console.warn('[PatternLib] 素材云端保存失败:', res.error.message);
+        else console.log('[PatternLib] 素材已保存到云端');
+      });
+    }).catch(function (e) {
+      console.warn('[PatternLib] 素材云端保存异常:', e);
+    });
+  }
+
+  /**
+   * 缩放 data URL 图片到 maxWidth
+   */
+  function resizeDataUrl(dataUrl, maxWidth) {
+    return new Promise(function (resolve) {
+      var img = new Image();
+      img.onload = function () {
+        if (img.naturalWidth <= maxWidth) { resolve(dataUrl); return; }
+        var ratio = maxWidth / img.naturalWidth;
+        var h = Math.round(img.naturalHeight * ratio);
+        var canvas = document.createElement('canvas');
+        canvas.width = maxWidth;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, maxWidth, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = function () { resolve(dataUrl); };
+      img.src = dataUrl;
+    });
+  }
+
+  /**
+   * 从 Supabase 加载已保存素材
+   */
+  function loadMaterialsFromCloud() {
+    var sb = getSupabase();
+    if (!sb) return Promise.resolve([]);
+    return sb.from('materials').select('*').order('created_at', { ascending: false }).then(function (res) {
+      if (res.error) { console.warn('[PatternLib] 加载云端素材失败:', res.error.message); return []; }
+      return res.data || [];
+    });
+  }
+
+  /**
+   * 从 data URL 创建 Image 对象
+   */
+  function loadImageFromUrl(dataUrl) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () { resolve(img); };
+      img.onerror = function () { reject(new Error('图片加载失败')); };
+      img.src = dataUrl;
+    });
+  }
+
   function safeW(w) { return Math.max(1, w); }
   function safeH(h) { return Math.max(1, h); }
   function uid() { return 'pat-' + (++_idCounter); }
@@ -1124,6 +1207,9 @@
           PatternLib.patternData.push(newPat);
           imported++;
 
+          // 保存到 Supabase（异步，不阻塞 UI）
+          saveMaterialToCloud(newPat, e.target.result);
+
           // 所有文件处理完后刷新网格
           if (imported === total) {
             PatternLib.renderPatternGrid(_currentFilter);
@@ -1536,6 +1622,33 @@
 
     // 生成器面板预绘制
     generatePattern();
+
+    // 从 Supabase 加载云端素材
+    loadMaterialsFromCloud().then(function (materials) {
+      if (!materials || materials.length === 0) return;
+      var loadCount = 0;
+      materials.forEach(function (m) {
+        if (!m.data_url) return;
+        loadImageFromUrl(m.data_url).then(function (img) {
+          var pat = {
+            id: 'cloud-' + m.id,
+            name: m.name,
+            category: 'imported',
+            primaryColor: m.primary_color || '#2c5f7c',
+            secondaryColor: m.secondary_color || '#8b6914',
+            _img: img,
+            drawFn: createImageDrawFn(img),
+            _cloudId: m.id
+          };
+          PatternLib.patternData.push(pat);
+          loadCount++;
+          if (loadCount === materials.length) {
+            PatternLib.renderPatternGrid(_currentFilter);
+            console.log('[PatternLib] 从云端加载 ' + loadCount + ' 个素材');
+          }
+        }).catch(function () {});
+      });
+    });
 
     console.log('[PatternLib] 初始化完成，共 ' + PatternLib.patternData.length + ' 个纹样');
   };
