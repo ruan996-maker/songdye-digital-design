@@ -1110,6 +1110,86 @@
     document.getElementById('modal-pattern-name').textContent = pat.name;
     document.getElementById('modal-pattern-category').textContent = getCategoryLabel(pat.category);
 
+    // 名称编辑功能
+    var nameEl = document.getElementById('modal-pattern-name');
+    nameEl.onclick = function () {
+      var oldName = pat.name;
+      nameEl.textContent = '';
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.value = oldName;
+      input.maxLength = 30;
+      input.style.cssText = 'font-family:var(--font-serif);font-size:inherit;color:inherit;background:rgba(255,255,255,0.1);border:1px solid var(--ru-cyan);border-radius:4px;padding:2px 8px;width:200px;outline:none;';
+      nameEl.style.cursor = 'default';
+      nameEl.onclick = null;
+      nameEl.appendChild(input);
+      input.focus();
+      input.select();
+
+      function saveName() {
+        var newName = input.value.trim() || oldName;
+        pat.name = newName;
+        nameEl.textContent = newName;
+        nameEl.style.cursor = 'pointer';
+        nameEl.onclick = arguments.callee; // won't work, rebind below
+        // 更新 Supabase（如果是云端素材）
+        if (pat._cloudId) {
+          var sb = getSupabase();
+          if (sb) {
+            sb.from('materials').update({ name: newName }).eq('id', pat._cloudId).then(function (res) {
+              if (res.error) console.warn('[PatternLib] 名称更新失败:', res.error.message);
+            });
+          }
+        }
+        // 刷新网格显示
+        PatternLib.renderPatternGrid(_currentFilter);
+        // 重新绑定点击事件
+        bindNameEdit(pat);
+      }
+
+      input.addEventListener('blur', saveName);
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { input.removeEventListener('blur', saveName); saveName(); }
+        if (e.key === 'Escape') { input.removeEventListener('blur', saveName); nameEl.textContent = oldName; nameEl.style.cursor = 'pointer'; bindNameEdit(pat); }
+      });
+    };
+
+    function bindNameEdit(p) {
+      nameEl.style.cursor = 'pointer';
+      nameEl.onclick = function () {
+        var oldN = p.name;
+        nameEl.textContent = '';
+        var inp = document.createElement('input');
+        inp.type = 'text';
+        inp.value = oldN;
+        inp.maxLength = 30;
+        inp.style.cssText = 'font-family:var(--font-serif);font-size:inherit;color:inherit;background:rgba(255,255,255,0.1);border:1px solid var(--ru-cyan);border-radius:4px;padding:2px 8px;width:200px;outline:none;';
+        nameEl.style.cursor = 'default';
+        nameEl.onclick = null;
+        nameEl.appendChild(inp);
+        inp.focus();
+        inp.select();
+
+        function doSave() {
+          var n = inp.value.trim() || oldN;
+          p.name = n;
+          nameEl.textContent = n;
+          nameEl.style.cursor = 'pointer';
+          if (p._cloudId) {
+            var s = getSupabase();
+            if (s) { s.from('materials').update({ name: n }).eq('id', p._cloudId).then(function (r) { if (r.error) console.warn('[PatternLib] 名称更新失败'); }); }
+          }
+          PatternLib.renderPatternGrid(_currentFilter);
+        }
+
+        inp.addEventListener('blur', doSave);
+        inp.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') { inp.removeEventListener('blur', doSave); doSave(); }
+          if (e.key === 'Escape') { inp.removeEventListener('blur', doSave); nameEl.textContent = oldN; nameEl.style.cursor = 'pointer'; bindNameEdit(p); }
+        });
+      };
+    }
+
     var colorPrimary = document.getElementById('modal-color-primary');
     var colorSecondary = document.getElementById('modal-color-secondary');
     var scaleSlider = document.getElementById('modal-scale');
