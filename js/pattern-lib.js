@@ -28,6 +28,154 @@
   //  工具函数
   // ══════════════════════════════════════════════════════
 
+  // ── 分类系统 ──
+  var _presetCategories = [
+    { key: 'plant', label: '植物纹' },
+    { key: 'geometric', label: '几何纹' },
+    { key: 'nature', label: '自然纹' },
+    { key: 'abstract', label: '抽象纹' },
+    { key: 'imported', label: '导入素材' }
+  ];
+  var _customCategories = [];  // { key, label }
+  var _allCategories = _presetCategories.slice();
+
+  // ── 管理模式 ──
+  var _manageMode = false;
+  var _selectedIds = {};  // id -> true
+
+  // ── 搜索 ──
+  var _searchKeyword = '';
+
+  /**
+   * 获取所有分类（预设+自定义）
+   */
+  function getAllCategories() { return _allCategories; }
+
+  function getCategoryLabel(cat) {
+    for (var i = 0; i < _allCategories.length; i++) {
+      if (_allCategories[i].key === cat) return _allCategories[i].label;
+    }
+    return cat;
+  }
+
+  /**
+   * 加载自定义分类
+   */
+  function loadCustomCategories() {
+    var sb = getSupabase();
+    if (!sb) {
+      // 本地后备
+      try { _customCategories = JSON.parse(localStorage.getItem('custom_categories') || '[]'); } catch(e) { _customCategories = []; }
+      _allCategories = _presetCategories.concat(_customCategories);
+      return Promise.resolve();
+    }
+    return sb.from('custom_categories').select('*').order('created_at', { ascending: true }).then(function (res) {
+      _customCategories = (res.data || []).map(function (r) { return { key: r.key, label: r.label }; });
+      _allCategories = _presetCategories.concat(_customCategories);
+      // 同步到本地
+      try { localStorage.setItem('custom_categories', JSON.stringify(_customCategories)); } catch(e) {}
+    }).catch(function () {
+      try { _customCategories = JSON.parse(localStorage.getItem('custom_categories') || '[]'); } catch(e) { _customCategories = []; }
+      _allCategories = _presetCategories.concat(_customCategories);
+    });
+  }
+
+  /**
+   * 添加自定义分类
+   */
+  function addCustomCategory(label) {
+    var key = 'custom_' + Date.now();
+    var cat = { key: key, label: label };
+    var sb = getSupabase();
+    if (sb) {
+      var session = window.AuthSystem ? window.AuthSystem.getCurrentUser() : null;
+      return sb.from('custom_categories').insert({ key: key, label: label, created_by: session ? session.username : null }).then(function (res) {
+        if (!res.error) {
+          _customCategories.push(cat);
+          _allCategories = _presetCategories.concat(_customCategories);
+          try { localStorage.setItem('custom_categories', JSON.stringify(_customCategories)); } catch(e) {}
+        }
+        return !res.error;
+      });
+    } else {
+      _customCategories.push(cat);
+      _allCategories = _presetCategories.concat(_customCategories);
+      try { localStorage.setItem('custom_categories', JSON.stringify(_customCategories)); } catch(e) {}
+      return Promise.resolve(true);
+    }
+  }
+
+  /**
+   * 删除素材
+   */
+  function deletePattern(patId) {
+    var idx = -1;
+    var pat = null;
+    for (var i = 0; i < PatternLib.patternData.length; i++) {
+      if (PatternLib.patternData[i].id === patId) { idx = i; pat = PatternLib.patternData[i]; break; }
+    }
+    if (idx === -1) return Promise.resolve(false);
+    PatternLib.patternData.splice(idx, 1);
+    if (pat && pat._cloudId) {
+      var sb = getSupabase();
+      if (sb) {
+        return sb.from('materials').delete().eq('id', pat._cloudId).then(function (res) {
+          PatternLib.renderPatternGrid(_currentFilter);
+          return true;
+        });
+      }
+    }
+    PatternLib.renderPatternGrid(_currentFilter);
+    return Promise.resolve(true);
+  }
+
+  /**
+   * 批量删除
+   */
+  function batchDeletePatterns(ids) {
+    var promises = [];
+    ids.forEach(function (id) { promises.push(deletePattern(id)); });
+    return Promise.all(promises).then(function () {
+      _selectedIds = {};
+      PatternLib.renderPatternGrid(_currentFilter);
+    });
+  }
+
+  /**
+   * 移动素材分类
+   */
+  function movePatternCategory(patId, newCategory) {
+    var pat = null;
+    for (var i = 0; i < PatternLib.patternData.length; i++) {
+      if (PatternLib.patternData[i].id === patId) { pat = PatternLib.patternData[i]; break; }
+    }
+    if (!pat) return Promise.resolve(false);
+    pat.category = newCategory;
+    if (pat._cloudId) {
+      var sb = getSupabase();
+      if (sb) {
+        return sb.from('materials').update({ category: newCategory }).eq('id', pat._cloudId).then(function (res) {
+          PatternLib.renderPatternGrid(_currentFilter);
+          return !res.error;
+        });
+      }
+    }
+    PatternLib.renderPatternGrid(_currentFilter);
+    return Promise.resolve(true);
+  }
+
+  /**
+   * 批量移动分类
+   */
+  function batchMoveCategory(ids, newCategory) {
+    var promises = [];
+    ids.forEach(function (id) { promises.push(movePatternCategory(id, newCategory)); });
+    return Promise.all(promises).then(function () {
+      _selectedIds = {};
+      PatternLib.renderPatternGrid(_currentFilter);
+    });
+  }
+
   function getSupabase() {
     try {
       if (window.supabase && window.supabase.createClient) {
@@ -1056,13 +1204,37 @@
     grid.innerHTML = '';
 
     var list = PatternLib.patternData.filter(function (p) {
-      return filter === 'all' || p.category === filter;
+      var catMatch = filter === 'all' || p.category === filter;
+      var searchMatch = !_searchKeyword || p.name.toLowerCase().indexOf(_searchKeyword.toLowerCase()) !== -1;
+      return catMatch && searchMatch;
     });
+
+    if (list.length === 0) {
+      grid.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:60px 0;font-size:0.95rem;">' +
+        (_searchKeyword ? '未找到匹配"' + _searchKeyword + '"的素材' : '该分类暂无素材') + '</p>';
+    }
 
     list.forEach(function (pat) {
       var card = document.createElement('div');
       card.className = 'pattern-card';
+      if (_selectedIds[pat.id]) card.classList.add('selected');
       card.setAttribute('data-id', pat.id);
+
+      // 管理模式复选框
+      if (_manageMode) {
+        var checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'pattern-checkbox';
+        checkbox.checked = !!_selectedIds[pat.id];
+        checkbox.addEventListener('change', function (e) {
+          e.stopPropagation();
+          if (this.checked) _selectedIds[pat.id] = true;
+          else delete _selectedIds[pat.id];
+          card.classList.toggle('selected', this.checked);
+          updateBatchUI();
+        });
+        card.appendChild(checkbox);
+      }
 
       var canvas = document.createElement('canvas');
       canvas.width = CARD_SIZE;
@@ -1071,7 +1243,7 @@
 
       var info = document.createElement('div');
       info.className = 'pattern-card-info';
-      info.innerHTML = '<span class="pattern-name">' + pat.name + '</span>'
+      info.innerHTML = '<span class="pattern-name">' + escapeHtml(pat.name) + '</span>'
                      + '<span class="pattern-category">' + getCategoryLabel(pat.category) + '</span>';
 
       card.appendChild(canvas);
@@ -1082,17 +1254,135 @@
       pat.canvas = canvas;
 
       // 点击打开编辑弹窗
-      card.addEventListener('click', function () {
+      card.addEventListener('click', function (e) {
+        if (_manageMode) {
+          // 管理模式：切换选中
+          if (e.target.classList.contains('pattern-checkbox')) return;
+          _selectedIds[pat.id] = !_selectedIds[pat.id];
+          if (!_selectedIds[pat.id]) delete _selectedIds[pat.id];
+          card.classList.toggle('selected', _selectedIds[pat.id]);
+          var cb = card.querySelector('.pattern-checkbox');
+          if (cb) cb.checked = !!_selectedIds[pat.id];
+          updateBatchUI();
+          return;
+        }
         openEditModal(pat);
       });
 
       grid.appendChild(card);
     });
+
+    // 更新分类按钮 badge
+    updateCategoryBadges();
   };
 
-  function getCategoryLabel(cat) {
-    var labels = { plant: '植物纹', geometric: '几何纹', nature: '自然纹', abstract: '抽象纹', imported: '导入素材' };
-    return labels[cat] || cat;
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function updateBatchUI() {
+    var count = Object.keys(_selectedIds).length;
+    var btnBatchDel = document.getElementById('btn-batch-delete');
+    var btnSelectAll = document.getElementById('btn-select-all');
+    if (btnBatchDel) btnBatchDel.textContent = '批量删除' + (count > 0 ? ' (' + count + ')' : '');
+    if (btnSelectAll) btnSelectAll.textContent = count === getFilteredCount() ? '取消全选' : '全选';
+  }
+
+  function getFilteredCount() {
+    return PatternLib.patternData.filter(function (p) {
+      var catMatch = _currentFilter === 'all' || p.category === _currentFilter;
+      var searchMatch = !_searchKeyword || p.name.toLowerCase().indexOf(_searchKeyword.toLowerCase()) !== -1;
+      return catMatch && searchMatch;
+    }).length;
+  }
+
+  function updateCategoryBadges() {
+    var filterGroup = document.getElementById('filter-group');
+    if (!filterGroup) return;
+    var buttons = filterGroup.querySelectorAll('.filter-btn');
+    buttons.forEach(function (btn) {
+      var cat = btn.getAttribute('data-category');
+      var count;
+      if (cat === 'all') {
+        count = PatternLib.patternData.length;
+      } else {
+        count = PatternLib.patternData.filter(function (p) { return p.category === cat; }).length;
+      }
+      // 移除旧 badge
+      var oldBadge = btn.querySelector('.cat-badge');
+      if (oldBadge) oldBadge.remove();
+      if (count > 0) {
+        var badge = document.createElement('span');
+        badge.className = 'cat-badge';
+        badge.textContent = count;
+        btn.appendChild(badge);
+      }
+    });
+  }
+
+  /**
+   * 渲染分类按钮（预设 + 自定义）
+   */
+  function renderFilterButtons() {
+    var filterGroup = document.getElementById('filter-group');
+    if (!filterGroup) return;
+    filterGroup.innerHTML = '';
+
+    // 全部
+    var allBtn = document.createElement('button');
+    allBtn.className = 'filter-btn' + (_currentFilter === 'all' ? ' active' : '');
+    allBtn.setAttribute('data-category', 'all');
+    allBtn.textContent = '全部纹样';
+    allBtn.addEventListener('click', function () {
+      filterGroup.querySelectorAll('.filter-btn').forEach(function (b) { b.classList.remove('active'); });
+      this.classList.add('active');
+      _selectedIds = {};
+      PatternLib.renderPatternGrid('all');
+    });
+    filterGroup.appendChild(allBtn);
+
+    // 所有分类
+    _allCategories.forEach(function (cat) {
+      var btn = document.createElement('button');
+      btn.className = 'filter-btn' + (_currentFilter === cat.key ? ' active' : '');
+      btn.setAttribute('data-category', cat.key);
+      btn.textContent = cat.label;
+      btn.addEventListener('click', function () {
+        filterGroup.querySelectorAll('.filter-btn').forEach(function (b) { b.classList.remove('active'); });
+        this.classList.add('active');
+        _selectedIds = {};
+        PatternLib.renderPatternGrid(cat.key);
+      });
+      filterGroup.appendChild(btn);
+    });
+
+    // + 新分类按钮
+    var addBtn = document.createElement('button');
+    addBtn.className = 'filter-btn filter-btn-add';
+    addBtn.textContent = '+';
+    addBtn.title = '添加自定义分类';
+    addBtn.addEventListener('click', function () {
+      document.getElementById('new-category-bar').classList.remove('hidden');
+      document.getElementById('new-category-input').focus();
+    });
+    filterGroup.appendChild(addBtn);
+
+    // 批量移动 select 选项更新
+    updateBatchMoveSelect();
+  }
+
+  function updateBatchMoveSelect() {
+    var sel = document.getElementById('batch-move-select');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">批量移动到...</option>';
+    _allCategories.forEach(function (cat) {
+      var opt = document.createElement('option');
+      opt.value = cat.key;
+      opt.textContent = cat.label;
+      sel.appendChild(opt);
+    });
   }
 
   // ══════════════════════════════════════════════════════
@@ -1107,87 +1397,42 @@
     if (!modal) return;
     modal.classList.remove('hidden');
 
+    // 名称
     document.getElementById('modal-pattern-name').textContent = pat.name;
-    document.getElementById('modal-pattern-category').textContent = getCategoryLabel(pat.category);
+    bindNameEdit(pat);
 
-    // 名称编辑功能
-    var nameEl = document.getElementById('modal-pattern-name');
-    nameEl.onclick = function () {
-      var oldName = pat.name;
-      nameEl.textContent = '';
-      var input = document.createElement('input');
-      input.type = 'text';
-      input.value = oldName;
-      input.maxLength = 30;
-      input.style.cssText = 'font-family:var(--font-serif);font-size:inherit;color:inherit;background:rgba(255,255,255,0.1);border:1px solid var(--ru-cyan);border-radius:4px;padding:2px 8px;width:200px;outline:none;';
-      nameEl.style.cursor = 'default';
-      nameEl.onclick = null;
-      nameEl.appendChild(input);
-      input.focus();
-      input.select();
-
-      function saveName() {
-        var newName = input.value.trim() || oldName;
-        pat.name = newName;
-        nameEl.textContent = newName;
-        nameEl.style.cursor = 'pointer';
-        nameEl.onclick = arguments.callee; // won't work, rebind below
-        // 更新 Supabase（如果是云端素材）
-        if (pat._cloudId) {
-          var sb = getSupabase();
-          if (sb) {
-            sb.from('materials').update({ name: newName }).eq('id', pat._cloudId).then(function (res) {
-              if (res.error) console.warn('[PatternLib] 名称更新失败:', res.error.message);
-            });
-          }
-        }
-        // 刷新网格显示
-        PatternLib.renderPatternGrid(_currentFilter);
-        // 重新绑定点击事件
-        bindNameEdit(pat);
+    // 分类下拉
+    var catSelect = document.getElementById('modal-pattern-category');
+    catSelect.innerHTML = '';
+    _allCategories.forEach(function (cat) {
+      var opt = document.createElement('option');
+      opt.value = cat.key;
+      opt.textContent = cat.label;
+      if (cat.key === pat.category) opt.selected = true;
+      catSelect.appendChild(opt);
+    });
+    catSelect.onchange = function () {
+      var newCat = this.value;
+      pat.category = newCat;
+      if (pat._cloudId) {
+        var sb = getSupabase();
+        if (sb) { sb.from('materials').update({ category: newCat }).eq('id', pat._cloudId); }
       }
-
-      input.addEventListener('blur', saveName);
-      input.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { input.removeEventListener('blur', saveName); saveName(); }
-        if (e.key === 'Escape') { input.removeEventListener('blur', saveName); nameEl.textContent = oldName; nameEl.style.cursor = 'pointer'; bindNameEdit(pat); }
-      });
+      PatternLib.renderPatternGrid(_currentFilter);
     };
 
-    function bindNameEdit(p) {
-      nameEl.style.cursor = 'pointer';
-      nameEl.onclick = function () {
-        var oldN = p.name;
-        nameEl.textContent = '';
-        var inp = document.createElement('input');
-        inp.type = 'text';
-        inp.value = oldN;
-        inp.maxLength = 30;
-        inp.style.cssText = 'font-family:var(--font-serif);font-size:inherit;color:inherit;background:rgba(255,255,255,0.1);border:1px solid var(--ru-cyan);border-radius:4px;padding:2px 8px;width:200px;outline:none;';
-        nameEl.style.cursor = 'default';
-        nameEl.onclick = null;
-        nameEl.appendChild(inp);
-        inp.focus();
-        inp.select();
-
-        function doSave() {
-          var n = inp.value.trim() || oldN;
-          p.name = n;
-          nameEl.textContent = n;
-          nameEl.style.cursor = 'pointer';
-          if (p._cloudId) {
-            var s = getSupabase();
-            if (s) { s.from('materials').update({ name: n }).eq('id', p._cloudId).then(function (r) { if (r.error) console.warn('[PatternLib] 名称更新失败'); }); }
-          }
-          PatternLib.renderPatternGrid(_currentFilter);
-        }
-
-        inp.addEventListener('blur', doSave);
-        inp.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter') { inp.removeEventListener('blur', doSave); doSave(); }
-          if (e.key === 'Escape') { inp.removeEventListener('blur', doSave); nameEl.textContent = oldN; nameEl.style.cursor = 'pointer'; bindNameEdit(p); }
+    // 删除按钮（仅导入/云端素材显示）
+    var delBtn = document.getElementById('btn-modal-delete');
+    if (pat._cloudId || pat.category === 'imported' || pat.id.indexOf('cloud-') === 0 || pat.id.indexOf('pat-') === 0) {
+      delBtn.style.display = 'inline-flex';
+      delBtn.onclick = function () {
+        if (!confirm('确认删除素材 "' + pat.name + '"？此操作不可恢复。')) return;
+        deletePattern(pat.id).then(function () {
+          closeEditModal();
         });
       };
+    } else {
+      delBtn.style.display = 'none';
     }
 
     var colorPrimary = document.getElementById('modal-color-primary');
@@ -1203,6 +1448,43 @@
     document.getElementById('rotate-val').textContent = '0°';
 
     drawModalPreview();
+  }
+
+  function bindNameEdit(pat) {
+    var nameEl = document.getElementById('modal-pattern-name');
+    nameEl.style.cursor = 'pointer';
+    nameEl.onclick = function () {
+      var oldN = pat.name;
+      nameEl.textContent = '';
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.value = oldN;
+      inp.maxLength = 30;
+      inp.style.cssText = 'font-family:var(--font-serif);font-size:inherit;color:inherit;background:rgba(255,255,255,0.1);border:1px solid var(--ru-cyan);border-radius:4px;padding:2px 8px;width:200px;outline:none;';
+      nameEl.style.cursor = 'default';
+      nameEl.onclick = null;
+      nameEl.appendChild(inp);
+      inp.focus();
+      inp.select();
+
+      function doSave() {
+        var n = inp.value.trim() || oldN;
+        pat.name = n;
+        nameEl.textContent = n;
+        nameEl.style.cursor = 'pointer';
+        if (pat._cloudId) {
+          var s = getSupabase();
+          if (s) { s.from('materials').update({ name: n }).eq('id', pat._cloudId); }
+        }
+        PatternLib.renderPatternGrid(_currentFilter);
+      }
+
+      inp.addEventListener('blur', doSave);
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { inp.removeEventListener('blur', doSave); doSave(); }
+        if (e.key === 'Escape') { inp.removeEventListener('blur', doSave); nameEl.textContent = oldN; nameEl.style.cursor = 'pointer'; bindNameEdit(pat); }
+      });
+    };
   }
 
   function closeEditModal() {
@@ -1535,7 +1817,21 @@
   // ══════════════════════════════════════════════════════
 
   function bindEvents() {
-    // 过滤按钮
+    // 搜索
+    var searchInput = document.getElementById('pattern-search');
+    if (searchInput) {
+      var searchTimer = null;
+      searchInput.addEventListener('input', function () {
+        clearTimeout(searchTimer);
+        var self = this;
+        searchTimer = setTimeout(function () {
+          _searchKeyword = self.value.trim();
+          PatternLib.renderPatternGrid(_currentFilter);
+        }, 200);
+      });
+    }
+
+    // 过滤按钮 — 由 renderFilterButtons 动态绑定
     var filterBtns = document.querySelectorAll('.filter-btn');
     filterBtns.forEach(function (btn) {
       btn.addEventListener('click', function () {
@@ -1684,6 +1980,116 @@
   }
 
   // ══════════════════════════════════════════════════════
+  //  管理模式事件
+  // ══════════════════════════════════════════════════════
+
+  function bindManageEvents() {
+    // 管理模式切换
+    var manageBtn = document.getElementById('btn-manage-mode');
+    if (manageBtn) {
+      manageBtn.addEventListener('click', function () {
+        _manageMode = !_manageMode;
+        _selectedIds = {};
+        this.textContent = _manageMode ? '退出管理' : '管理模式';
+        this.classList.toggle('active', _manageMode);
+        toggleManageButtons(_manageMode);
+        PatternLib.renderPatternGrid(_currentFilter);
+      });
+    }
+
+    // 全选
+    var selectAllBtn = document.getElementById('btn-select-all');
+    if (selectAllBtn) {
+      selectAllBtn.addEventListener('click', function () {
+        var filteredIds = PatternLib.patternData.filter(function (p) {
+          var catMatch = _currentFilter === 'all' || p.category === _currentFilter;
+          var searchMatch = !_searchKeyword || p.name.toLowerCase().indexOf(_searchKeyword.toLowerCase()) !== -1;
+          return catMatch && searchMatch;
+        }).map(function (p) { return p.id; });
+
+        if (Object.keys(_selectedIds).length === filteredIds.length) {
+          // 取消全选
+          _selectedIds = {};
+        } else {
+          filteredIds.forEach(function (id) { _selectedIds[id] = true; });
+        }
+        PatternLib.renderPatternGrid(_currentFilter);
+        updateBatchUI();
+      });
+    }
+
+    // 批量删除
+    var batchDelBtn = document.getElementById('btn-batch-delete');
+    if (batchDelBtn) {
+      batchDelBtn.addEventListener('click', function () {
+        var ids = Object.keys(_selectedIds);
+        if (ids.length === 0) return;
+        if (!confirm('确认删除选中的 ' + ids.length + ' 个素材？此操作不可恢复。')) return;
+        batchDeletePatterns(ids);
+      });
+    }
+
+    // 批量移动
+    var batchMoveSel = document.getElementById('batch-move-select');
+    if (batchMoveSel) {
+      batchMoveSel.addEventListener('change', function () {
+        var newCat = this.value;
+        if (!newCat) return;
+        var ids = Object.keys(_selectedIds);
+        if (ids.length === 0) { this.value = ''; return; }
+        if (!confirm('确认将选中的 ' + ids.length + ' 个素材移动到"' + getCategoryLabel(newCat) + '"？')) { this.value = ''; return; }
+        batchMoveCategory(ids, newCat).then(function () {
+          batchMoveSel.value = '';
+        });
+      });
+    }
+
+    // 新建分类
+    var addCatBtn = document.getElementById('btn-add-category');
+    var cancelCatBtn = document.getElementById('btn-cancel-category');
+    var newCatInput = document.getElementById('new-category-input');
+    var newCatBar = document.getElementById('new-category-bar');
+
+    if (addCatBtn) {
+      addCatBtn.addEventListener('click', function () {
+        var label = newCatInput.value.trim();
+        if (!label) return;
+        if (label.length > 10) { alert('分类名称不能超过10个字符'); return; }
+        addCustomCategory(label).then(function (ok) {
+          if (ok) {
+            newCatInput.value = '';
+            newCatBar.classList.add('hidden');
+            renderFilterButtons();
+            updateCategoryBadges();
+          } else {
+            alert('添加分类失败，请重试');
+          }
+        });
+      });
+    }
+    if (cancelCatBtn) {
+      cancelCatBtn.addEventListener('click', function () {
+        newCatInput.value = '';
+        newCatBar.classList.add('hidden');
+      });
+    }
+    if (newCatInput) {
+      newCatInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { addCatBtn.click(); }
+        if (e.key === 'Escape') { cancelCatBtn.click(); }
+      });
+    }
+  }
+
+  function toggleManageButtons(show) {
+    var actions = document.querySelectorAll('.btn-manage-action, .batch-move-select');
+    actions.forEach(function (el) {
+      if (show) { el.classList.remove('hidden'); el.style.display = ''; }
+      else { el.classList.add('hidden'); el.style.display = 'none'; }
+    });
+  }
+
+  // ══════════════════════════════════════════════════════
   //  初始化
   // ══════════════════════════════════════════════════════
 
@@ -1691,8 +2097,17 @@
     // 加载预设纹样到 patternData
     PatternLib.patternData = _presetPatterns.slice();
 
+    // 加载自定义分类
+    loadCustomCategories().then(function () {
+      renderFilterButtons();
+      // 显示管理模式按钮
+      var manageBtn = document.getElementById('btn-manage-mode');
+      if (manageBtn) manageBtn.style.display = 'inline-flex';
+    });
+
     // 绑定事件
     bindEvents();
+    bindManageEvents();
 
     // 渲染初始网格
     PatternLib.renderPatternGrid('all');
@@ -1713,7 +2128,7 @@
           var pat = {
             id: 'cloud-' + m.id,
             name: m.name,
-            category: 'imported',
+            category: m.category || 'imported',
             primaryColor: m.primary_color || '#2c5f7c',
             secondaryColor: m.secondary_color || '#8b6914',
             _img: img,
