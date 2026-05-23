@@ -110,7 +110,7 @@
 
   // --- 本地模式（后备） ---
   var STORAGE_KEY = 'songdye_users';
-  var DEFAULT_ADMIN = { username: 'admin', password: 'songdye2026', role: 'admin', realName: '系统管理员' };
+  var DEFAULT_ADMIN = { username: 'admin', password: '123456', role: 'admin', realName: '系统管理员' };
 
   function getUsersLocal() {
     try { var raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : []; }
