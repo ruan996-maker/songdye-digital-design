@@ -121,7 +121,7 @@
   function ensureDefaultAdmin() {
     var users = getUsersLocal();
     if (!users.some(function (u) { return u.username === 'admin'; })) {
-      users.unshift({ username: DEFAULT_ADMIN.username, passwordHash: sha256(DEFAULT_ADMIN.password), role: DEFAULT_ADMIN.role, realName: DEFAULT_ADMIN.realName, createdAt: new Date().toISOString(), lastLogin: null });
+      users.unshift({ username: DEFAULT_ADMIN.username, passwordHash: sha256(DEFAULT_ADMIN.password), role: DEFAULT_ADMIN.role, realName: DEFAULT_ADMIN.realName, securityQuestion: '您的真实姓名是什么？', securityAnswerHash: sha256('系统管理员'), createdAt: new Date().toISOString(), lastLogin: null });
       saveUsersLocal(users);
     }
   }
@@ -138,6 +138,8 @@
         role: res.data.role,
         realName: res.data.real_name,
         importEnabled: !!res.data.import_enabled,
+        securityQuestion: res.data.security_question || '',
+        securityAnswerHash: res.data.security_answer_hash || '',
         createdAt: res.data.created_at,
         lastLogin: res.data.last_login
       };
@@ -156,6 +158,14 @@
     var sb = getSupabase();
     if (!sb) return Promise.resolve(false);
     return sb.from('users').update({ password_hash: newHash }).eq('username', username).then(function (res) {
+      return !res.error;
+    });
+  }
+
+  function sbUpdateSecurityQA(username, question, answerHash) {
+    var sb = getSupabase();
+    if (!sb) return Promise.resolve(false);
+    return sb.from('users').update({ security_question: question, security_answer_hash: answerHash }).eq('username', username).then(function (res) {
       return !res.error;
     });
   }
@@ -390,6 +400,82 @@
     }
   }
 
+  /* ═══════════════════════════════════════════
+     找回密码（安全问题验证）
+     ═══════════════════════════════════════════ */
+
+  var forgotState = { username: '', securityQuestion: '' };
+
+  function doForgotStep1(username) {
+    if (!username || !username.trim()) return Promise.resolve({ ok: false, error: '请输入账号' });
+    username = username.trim();
+    var sb = getSupabase();
+    if (sb) {
+      return sbFetchUser(username).then(function (user) {
+        if (!user) return { ok: false, error: '该账号不存在' };
+        if (!user.securityQuestion || !user.securityAnswerHash) return { ok: false, error: '该账号未设置安全问题，请联系管理员重置' };
+        forgotState.username = username;
+        forgotState.securityQuestion = user.securityQuestion;
+        return { ok: true, question: user.securityQuestion };
+      });
+    } else {
+      var users = getUsersLocal();
+      var user = null;
+      for (var i = 0; i < users.length; i++) { if (users[i].username === username) { user = users[i]; break; } }
+      if (!user) return Promise.resolve({ ok: false, error: '该账号不存在' });
+      if (!user.securityQuestion || !user.securityAnswerHash) return Promise.resolve({ ok: false, error: '该账号未设置安全问题，请联系管理员重置' });
+      forgotState.username = username;
+      forgotState.securityQuestion = user.securityQuestion;
+      return Promise.resolve({ ok: true, question: user.securityQuestion });
+    }
+  }
+
+  function doForgotStep2(answer, newPwd) {
+    if (!answer || !answer.trim()) return Promise.resolve({ ok: false, error: '请输入安全问题的答案' });
+    if (!newPwd || newPwd.length < MIN_PASSWORD_LENGTH) return Promise.resolve({ ok: false, error: '密码长度不能少于 ' + MIN_PASSWORD_LENGTH + ' 位' });
+    var answerHash = sha256(answer.trim());
+    var newHash = sha256(newPwd);
+    var sb = getSupabase();
+    if (sb) {
+      return sbFetchUser(forgotState.username).then(function (user) {
+        if (!user) return { ok: false, error: '用户不存在' };
+        if (answerHash !== user.securityAnswerHash) return { ok: false, error: '安全问题答案不正确' };
+        return sbUpdatePassword(user.username, newHash).then(function (ok) {
+          if (ok) { forgotState.username = ''; forgotState.securityQuestion = ''; return { ok: true }; }
+          return { ok: false, error: '密码重置失败，请稍后重试' };
+        });
+      });
+    } else {
+      var users = getUsersLocal();
+      var idx = -1; for (var i = 0; i < users.length; i++) { if (users[i].username === forgotState.username) { idx = i; break; } }
+      if (idx === -1) return Promise.resolve({ ok: false, error: '用户不存在' });
+      if (answerHash !== users[idx].securityAnswerHash) return Promise.resolve({ ok: false, error: '安全问题答案不正确' });
+      users[idx].passwordHash = newHash; saveUsersLocal(users);
+      forgotState.username = ''; forgotState.securityQuestion = '';
+      return Promise.resolve({ ok: true });
+    }
+  }
+
+  function doUpdateSecurityQA(username, question, answer) {
+    var session = getSession(); if (!session) return Promise.resolve('未登录');
+    if (!question || !answer.trim()) return Promise.resolve('请填写安全问题和答案');
+    var answerHash = sha256(answer.trim());
+    var sb = getSupabase();
+    if (sb) {
+      return sbUpdateSecurityQA(username, question, answerHash).then(function (ok) {
+        return ok ? true : '安全问题更新失败';
+      });
+    } else {
+      var users = getUsersLocal();
+      var idx = -1; for (var i = 0; i < users.length; i++) { if (users[i].username === username) { idx = i; break; } }
+      if (idx === -1) return Promise.resolve('用户不存在');
+      users[idx].securityQuestion = question;
+      users[idx].securityAnswerHash = answerHash;
+      saveUsersLocal(users);
+      return Promise.resolve(true);
+    }
+  }
+
   function doGetAllUsers() {
     var session = getSession(); if (!session || session.role !== 'admin') return Promise.resolve(null);
     var sb = getSupabase();
@@ -524,6 +610,130 @@
         if (result === true) { dialog.remove(); showInlineMessage('密码修改成功'); }
         else { errEl.textContent = result; }
       });
+    });
+  }
+
+  /* ═══════════════════════════════════════════
+     找回密码弹窗
+     ═══════════════════════════════════════════ */
+
+  function showForgotPasswordDialog() {
+    var overlay = document.getElementById('forgot-pwd-overlay');
+    if (!overlay) return;
+    showStep(1);
+    overlay.style.display = '';
+  }
+
+  function hideForgotPasswordDialog() {
+    var overlay = document.getElementById('forgot-pwd-overlay');
+    if (overlay) overlay.style.display = 'none';
+    forgotState.username = '';
+    forgotState.securityQuestion = '';
+  }
+
+  function showStep(n) {
+    var steps = ['forgot-step1', 'forgot-step2', 'forgot-step3', 'forgot-success'];
+    steps.forEach(function (id, i) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = (i + 1 === n) ? '' : 'none';
+    });
+    // 清除错误
+    ['forgot-step1-error', 'forgot-step2-error', 'forgot-step3-error'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) { el.textContent = ''; el.style.display = 'none'; }
+    });
+  }
+
+  function bindForgotPasswordEvents() {
+    // 忘记密码链接
+    var forgotLink = document.getElementById('auth-forgot-link');
+    if (forgotLink) forgotLink.addEventListener('click', function () { showForgotPasswordDialog(); });
+
+    // 返回登录
+    var backBtn = document.getElementById('forgot-back-btn');
+    if (backBtn) backBtn.addEventListener('click', hideForgotPasswordDialog);
+
+    // 步骤1：下一步
+    var nextBtn = document.getElementById('forgot-next-btn');
+    if (nextBtn) nextBtn.addEventListener('click', function () {
+      var username = document.getElementById('forgot-username').value.trim();
+      var errEl = document.getElementById('forgot-step1-error');
+      if (!username) { errEl.textContent = '请输入账号'; errEl.style.display = ''; return; }
+      nextBtn.textContent = '验证中...';
+      nextBtn.disabled = true;
+      doForgotStep1(username).then(function (result) {
+        nextBtn.textContent = '下一步';
+        nextBtn.disabled = false;
+        if (result.ok) {
+          document.getElementById('forgot-question-text').textContent = result.question;
+          showStep(2);
+        } else {
+          errEl.textContent = result.error;
+          errEl.style.display = '';
+        }
+      });
+    });
+
+    // 步骤1 回车
+    var forgotUsername = document.getElementById('forgot-username');
+    if (forgotUsername) forgotUsername.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); document.getElementById('forgot-next-btn').click(); }
+    });
+
+    // 步骤2：验证答案并进入重置
+    var verifyBtn = document.getElementById('forgot-verify-btn');
+    if (verifyBtn) verifyBtn.addEventListener('click', function () {
+      var answer = document.getElementById('forgot-answer').value.trim();
+      var newPwd = document.getElementById('forgot-new-pwd').value;
+      var confirmPwd = document.getElementById('forgot-confirm-pwd').value;
+      var errEl = document.getElementById('forgot-step2-error');
+      if (!answer) { errEl.textContent = '请输入安全问题的答案'; errEl.style.display = ''; return; }
+      if (!newPwd || newPwd.length < MIN_PASSWORD_LENGTH) { errEl.textContent = '新密码长度不能少于 ' + MIN_PASSWORD_LENGTH + ' 位'; errEl.style.display = ''; return; }
+      if (newPwd !== confirmPwd) { errEl.textContent = '两次输入的新密码不一致'; errEl.style.display = ''; return; }
+      verifyBtn.textContent = '验证中...';
+      verifyBtn.disabled = true;
+      doForgotStep2(answer, newPwd).then(function (result) {
+        verifyBtn.textContent = '验 证';
+        verifyBtn.disabled = false;
+        if (result.ok) {
+          showStep(4);
+        } else {
+          errEl.textContent = result.error;
+          errEl.style.display = '';
+        }
+      });
+    });
+
+    // 步骤2/3 回车
+    var forgotAnswer = document.getElementById('forgot-answer');
+    if (forgotAnswer) forgotAnswer.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); showStep(3); }
+    });
+
+    // 步骤3：重置密码按钮
+    var resetBtn = document.getElementById('forgot-reset-btn');
+    if (resetBtn) resetBtn.addEventListener('click', function () {
+      var newPwd = document.getElementById('forgot-new-pwd').value;
+      var confirmPwd = document.getElementById('forgot-confirm-pwd').value;
+      var errEl = document.getElementById('forgot-step3-error');
+      var answer = document.getElementById('forgot-answer').value.trim();
+      if (!newPwd || newPwd.length < MIN_PASSWORD_LENGTH) { errEl.textContent = '新密码长度不能少于 ' + MIN_PASSWORD_LENGTH + ' 位'; errEl.style.display = ''; return; }
+      if (newPwd !== confirmPwd) { errEl.textContent = '两次输入的新密码不一致'; errEl.style.display = ''; return; }
+      if (!answer) { errEl.textContent = '请先返回上一步回答安全问题'; errEl.style.display = ''; showStep(2); return; }
+      resetBtn.textContent = '重置中...';
+      resetBtn.disabled = true;
+      doForgotStep2(answer, newPwd).then(function (result) {
+        resetBtn.textContent = '重置密码';
+        resetBtn.disabled = false;
+        if (result.ok) { showStep(4); }
+        else { errEl.textContent = result.error; errEl.style.display = ''; }
+      });
+    });
+
+    // 成功：返回登录
+    var goLoginBtn = document.getElementById('forgot-go-login');
+    if (goLoginBtn) goLoginBtn.addEventListener('click', function () {
+      hideForgotPasswordDialog();
     });
   }
 
@@ -686,6 +896,8 @@
 
     var addForm = document.getElementById('admin-add-form');
     if (addForm) addForm.addEventListener('submit', handleAddUser);
+
+    bindForgotPasswordEvents();
   }
 
   /* ═══════════════════════════════════════════
@@ -733,7 +945,8 @@
     getAllUsers: function () { return doGetAllUsers(); },
     canImport: function () { return doCheckImportPermission(); },
     toggleImportPermission: function (u, e) { return doToggleImportPermission(u, e); },
-    refreshPermission: function () { return doRefreshSessionPermission(); }
+    refreshPermission: function () { return doRefreshSessionPermission(); },
+    updateSecurityQA: function (q, a) { var s = getSession(); return s ? doUpdateSecurityQA(s.username, q, a) : Promise.resolve('未登录'); }
   };
 
   // 自动初始化
