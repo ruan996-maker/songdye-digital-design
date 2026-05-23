@@ -31,6 +31,7 @@
                 <div id="auth-login-error" class="auth-error" style="display:none"></div>
                 <div id="auth-sync-status" class="auth-sync-status" style="display:none"></div>
                 <button type="submit" id="auth-login-btn" class="btn btn-primary btn-block">登 录</button>
+                <p class="auth-forgot-pwd"><a href="javascript:void(0)" id="auth-forgot-link">忘记密码？</a></p>
             </form>
             <p class="auth-footer">授权访问 · 仅限授权人员使用</p>
             <p class="auth-designer">Designed by Ruan Yanqi. V1.31</p>
@@ -102,6 +103,61 @@
                     <button type="submit" class="btn btn-primary">确认修改</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- ========== 找回密码弹窗 ========== -->
+    <div id="forgot-pwd-overlay" class="auth-overlay" style="display:none">
+        <div class="auth-card auth-card-sm">
+            <div class="auth-forgot-header">
+                <button id="forgot-back-btn" class="forgot-back-btn" title="返回登录">←</button>
+                <h2>找回密码</h2>
+            </div>
+            <!-- 步骤1：输入账号 -->
+            <div id="forgot-step1" class="forgot-step">
+                <p class="forgot-hint">请输入需要找回密码的账号</p>
+                <div class="auth-field">
+                    <label>账号</label>
+                    <input type="text" id="forgot-username" placeholder="请输入账号" maxlength="20">
+                </div>
+                <div id="forgot-step1-error" class="auth-error" style="display:none"></div>
+                <button type="button" id="forgot-next-btn" class="btn btn-primary btn-block">下一步</button>
+            </div>
+            <!-- 步骤2：回答安全问题 -->
+            <div id="forgot-step2" class="forgot-step" style="display:none">
+                <p class="forgot-hint">请回答安全问题以验证身份</p>
+                <div class="auth-field">
+                    <label>安全问题</label>
+                    <div class="forgot-question-text" id="forgot-question-text"></div>
+                </div>
+                <div class="auth-field">
+                    <label>您的答案</label>
+                    <input type="text" id="forgot-answer" placeholder="请输入安全问题的答案">
+                </div>
+                <div id="forgot-step2-error" class="auth-error" style="display:none"></div>
+                <button type="button" id="forgot-verify-btn" class="btn btn-primary btn-block">验 证</button>
+            </div>
+            <!-- 步骤3：设置新密码 -->
+            <div id="forgot-step3" class="forgot-step" style="display:none">
+                <p class="forgot-hint">身份验证通过，请设置新密码</p>
+                <div class="auth-field">
+                    <label>新密码</label>
+                    <input type="password" id="forgot-new-pwd" placeholder="输入新密码（至少6位）" minlength="6">
+                </div>
+                <div class="auth-field">
+                    <label>确认新密码</label>
+                    <input type="password" id="forgot-confirm-pwd" placeholder="再次输入新密码">
+                </div>
+                <div id="forgot-step3-error" class="auth-error" style="display:none"></div>
+                <button type="button" id="forgot-reset-btn" class="btn btn-primary btn-block">重置密码</button>
+            </div>
+            <!-- 成功提示 -->
+            <div id="forgot-success" class="forgot-step" style="display:none">
+                <div class="forgot-success-icon">✓</div>
+                <p class="forgot-success-text">密码重置成功！</p>
+                <p class="forgot-hint">请使用新密码登录</p>
+                <button type="button" id="forgot-go-login" class="btn btn-primary btn-block">返回登录</button>
+            </div>
         </div>
     </div>
 
