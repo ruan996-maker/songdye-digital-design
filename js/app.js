@@ -65,6 +65,11 @@
 
         // 通知模块切换
         EventBus.emit('module-changed', { module: moduleName });
+
+        // 切换到预览模块时刷新纹样下拉框
+        if (moduleName === 'preview') {
+            updatePreviewPatternSelect();
+        }
     }
 
     // ========== 导航绑定 ==========
@@ -78,11 +83,9 @@
 
     // ========== 模块间数据联通 ==========
 
-    // 纹样选中 → 更新3D预览的纹样下拉
-    EventBus.on('pattern-selected', function(data) {
-        if (data && data.canvas) {
-            updatePreviewPatternSelect();
-        }
+    // 纹样选中 → 更新3D预览的纹样下拉（监听 DOM 自定义事件）
+    document.addEventListener('pattern-selected', function() {
+        updatePreviewPatternSelect();
     });
 
     // 配色选中 → 可供纹样模块使用
