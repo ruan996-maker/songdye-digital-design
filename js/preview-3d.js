@@ -1244,9 +1244,38 @@
 
   /* ==================== 纹样应用 ==================== */
   function applyPattern(patternCanvas) {
-    if (!patternCanvas || !ctx) return;
+    if (!patternCanvas) {
+      console.warn('[Preview3D] applyPattern: 传入的 canvas 为空');
+      return;
+    }
+    if (!ctx) {
+      console.warn('[Preview3D] applyPattern: Preview3D 尚未初始化（ctx 为空），请先切换到3D预览标签页');
+      return;
+    }
     try {
+      // 安全检查：确保 canvas 有有效像素数据
+      var pw = patternCanvas.width || 0;
+      var ph = patternCanvas.height || 0;
+      if (pw < 1 || ph < 1) {
+        console.warn('[Preview3D] applyPattern: canvas 尺寸无效', pw, 'x', ph);
+        return;
+      }
+      // 尝试读取一个像素来验证 canvas 数据可访问
+      var testCtx = patternCanvas.getContext('2d');
+      if (testCtx) {
+        var pixel = testCtx.getImageData(0, 0, 1, 1).data;
+        if (pixel[3] === 0 && pixel[0] === 0 && pixel[1] === 0 && pixel[2] === 0) {
+          // 透明/空白像素，可能整个 canvas 都是空的 — 仍然尝试 createPattern
+          console.warn('[Preview3D] applyPattern: canvas 像素数据可能为空（透明）');
+        }
+      }
+
       state.pattern = ctx.createPattern(patternCanvas, 'repeat');
+      if (!state.pattern) {
+        console.error('[Preview3D] createPattern 返回 null');
+        return;
+      }
+      console.log('[Preview3D] 纹样已应用成功 (' + pw + 'x' + ph + ')');
       render();
     } catch (err) {
       console.warn('[Preview3D] 创建纹样 pattern 失败:', err);
