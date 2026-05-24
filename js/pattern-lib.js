@@ -194,23 +194,25 @@
    */
   function saveMaterialToCloud(pat, dataUrl) {
     var sb = getSupabase();
-    if (!sb) return Promise.resolve();
+    if (!sb) return Promise.resolve(null);
     var session = window.AuthSystem ? window.AuthSystem.getCurrentUser() : null;
     // 缩小图片到 800px 以内以节省存储
     return resizeDataUrl(dataUrl, 800).then(function (resizedUrl) {
       return sb.from('materials').insert({
         name: pat.name,
-        category: 'imported',
+        category: pat.category || 'imported',
         data_url: resizedUrl,
         primary_color: pat.primaryColor || '#2c5f7c',
         secondary_color: pat.secondaryColor || '#8b6914',
         uploaded_by: session ? session.username : null
       }).then(function (res) {
-        if (res.error) console.warn('[PatternLib] 素材云端保存失败:', res.error.message);
-        else console.log('[PatternLib] 素材已保存到云端');
+        if (res.error) { console.warn('[PatternLib] 素材云端保存失败:', res.error.message); return null; }
+        console.log('[PatternLib] 素材已保存到云端, id=' + res.data[0].id);
+        return res.data[0].id;
       });
     }).catch(function (e) {
       console.warn('[PatternLib] 素材云端保存异常:', e);
+      return null;
     });
   }
 
@@ -1512,6 +1514,17 @@
     pat.primaryColor = colorPrimary;
     pat.secondaryColor = colorSecondary;
 
+    // 同步颜色到云端
+    if (pat._cloudId) {
+      var sb = getSupabase();
+      if (sb) {
+        sb.from('materials').update({
+          primary_color: colorPrimary,
+          secondary_color: colorSecondary
+        }).eq('id', pat._cloudId);
+      }
+    }
+
     ctx.save();
     ctx.translate(w / 2, h / 2);
     ctx.rotate(rotate);
@@ -1570,7 +1583,9 @@
           imported++;
 
           // 保存到 Supabase（异步，不阻塞 UI）
-          saveMaterialToCloud(newPat, e.target.result);
+          saveMaterialToCloud(newPat, e.target.result).then(function (cloudId) {
+            if (cloudId) newPat._cloudId = cloudId;
+          });
 
           // 所有文件处理完后刷新网格
           if (imported === total) {
@@ -1798,6 +1813,9 @@
       fn(ctx, w, h, p);
     };
 
+    // 将 Canvas 转为 dataURL，用于云端存储
+    var dataUrl = canvas.toDataURL('image/png');
+
     var newPat = {
       id: uid(),
       name: name,
@@ -1805,11 +1823,23 @@
       primaryColor: primary,
       secondaryColor: secondary,
       drawFn: capturedDrawFn,
-      canvas: null
+      canvas: null,
+      _genDataUrl: dataUrl
     };
 
     PatternLib.patternData.push(newPat);
     PatternLib.renderPatternGrid(_currentFilter);
+
+    // 保存到云端（异步，不阻塞 UI）
+    var sb = getSupabase();
+    if (sb) {
+      saveMaterialToCloud(newPat, dataUrl).then(function (cloudId) {
+        if (cloudId) {
+          newPat._cloudId = cloudId;
+          console.log('[PatternLib] 生成素材已同步云端, id=' + cloudId);
+        }
+      });
+    }
   }
 
   // ══════════════════════════════════════════════════════
