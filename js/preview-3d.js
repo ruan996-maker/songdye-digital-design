@@ -1215,6 +1215,31 @@
         applyPattern(e.detail.canvas);
       }
     });
+
+    /* --- 纹样下拉框切换 --- */
+    var patSelect = document.getElementById('preview-pattern-select');
+    if (patSelect) {
+      patSelect.addEventListener('change', function () {
+        var idx = parseInt(this.value, 10);
+        if (isNaN(idx)) {
+          state.pattern = null;
+          render();
+          return;
+        }
+        var pats = window.PatternLib ? window.PatternLib.patternData : [];
+        if (!pats[idx]) return;
+        var pat = pats[idx];
+        // 将纹样绘制到临时 Canvas 再应用
+        var tmpCv = document.createElement('canvas');
+        tmpCv.width = 240;
+        tmpCv.height = 240;
+        var tmpCtx = tmpCv.getContext('2d');
+        if (pat.drawFn) {
+          pat.drawFn(tmpCtx, 240, 240, pat.primaryColor, pat.secondaryColor);
+          applyPattern(tmpCv);
+        }
+      });
+    }
   }
 
   /* ==================== 纹样应用 ==================== */
@@ -1229,7 +1254,10 @@
   }
 
   /* ==================== 初始化 ==================== */
+  var _inited = false;
   function init() {
+    if (_inited) return;
+    _inited = true;
     canvas = document.getElementById('preview-3d-canvas');
     if (!canvas) {
       console.error('[Preview3D] 未找到 Canvas #preview-3d-canvas');
