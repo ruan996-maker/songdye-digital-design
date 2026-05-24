@@ -1999,11 +1999,16 @@
     var btnApplyPreview = document.getElementById('btn-modal-apply-preview');
     if (btnApplyPreview) {
       btnApplyPreview.addEventListener('click', function () {
-        var cv = document.getElementById('modal-canvas');
-        if (!cv) return;
+        var srcCanvas = document.getElementById('modal-canvas');
+        if (!srcCanvas) return;
 
-        // 保存待应用的 Canvas
-        PatternLib._pendingPreviewCanvas = cv;
+        // 将 modal-canvas 内容复制到独立临时 canvas
+        // （关闭弹窗后 display:none 可能导致 createPattern 无法读取像素）
+        var tmpCv = document.createElement('canvas');
+        tmpCv.width = srcCanvas.width;
+        tmpCv.height = srcCanvas.height;
+        tmpCv.getContext('2d').drawImage(srcCanvas, 0, 0);
+        PatternLib._pendingPreviewCanvas = tmpCv;
 
         closeEditModal();
 
@@ -2017,7 +2022,7 @@
             Preview3D.applyPattern(PatternLib._pendingPreviewCanvas);
             PatternLib._pendingPreviewCanvas = null;
           }
-        }, 100);
+        }, 150);
       });
     }
   }
