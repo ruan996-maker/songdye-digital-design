@@ -1995,16 +1995,29 @@
       });
     }
 
-    // 应用到 3D 预览（预留接口，由 preview-3d 模块监听自定义事件）
+    // 应用到 3D 预览
     var btnApplyPreview = document.getElementById('btn-modal-apply-preview');
     if (btnApplyPreview) {
       btnApplyPreview.addEventListener('click', function () {
         var cv = document.getElementById('modal-canvas');
-        if (cv) PatternLib.currentPattern = { canvas: cv };
-        // 派发自定义事件供其他模块使用
-        var evt = new CustomEvent('pattern-selected', { detail: { canvas: cv } });
-        document.dispatchEvent(evt);
+        if (!cv) return;
+
+        // 保存待应用的 Canvas
+        PatternLib._pendingPreviewCanvas = cv;
+
         closeEditModal();
+
+        // 自动切换到 3D 预览模块（触发 Preview3D.init）
+        var previewTab = document.querySelector('.nav-tab[data-module="preview"]');
+        if (previewTab) previewTab.click();
+
+        // init 是同步执行的，延迟一帧确保渲染就绪后再应用纹样
+        setTimeout(function () {
+          if (window.Preview3D && PatternLib._pendingPreviewCanvas) {
+            Preview3D.applyPattern(PatternLib._pendingPreviewCanvas);
+            PatternLib._pendingPreviewCanvas = null;
+          }
+        }, 100);
       });
     }
   }
