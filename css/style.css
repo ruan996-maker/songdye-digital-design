@@ -1748,6 +1748,17 @@ body {
   accent-color: var(--ru-cyan);
 }
 
+/* 形状包围选项组过渡 */
+#shape-options-group,
+#shape-size-group {
+  transition: opacity 0.3s ease, max-height 0.3s ease;
+  overflow: hidden;
+}
+#shape-size-val {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .bg-color-options {
   display: flex;
   gap: 8px;
