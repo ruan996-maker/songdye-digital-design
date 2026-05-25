@@ -1750,13 +1750,64 @@ body {
 
 /* 形状包围选项组过渡 */
 #shape-options-group,
-#shape-size-group {
+#shape-size-group,
+#shape-count-group,
+#shape-density-group,
+#shape-arrangement-group,
+#custom-shape-group {
   transition: opacity 0.3s ease, max-height 0.3s ease;
   overflow: hidden;
 }
-#shape-size-val {
+#shape-size-val,
+#shape-count-val,
+#shape-density-val {
   margin-left: 6px;
   vertical-align: middle;
+}
+
+/* 自定义形状面板 */
+.custom-shape-inputs {
+  margin-bottom: 8px;
+}
+.custom-shape-hint {
+  display: block;
+  font-size: 11px;
+  color: #c0392b;
+  margin-bottom: 6px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.custom-shape-list {
+  margin-top: 8px;
+}
+.custom-shape-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  margin-bottom: 4px;
+  background: var(--ding-white);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.custom-shape-name {
+  letter-spacing: 1px;
+}
+.btn-delete-custom-shape {
+  background: none;
+  border: none;
+  color: #c0392b;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.btn-delete-custom-shape:hover {
+  opacity: 1;
 }
 
 .bg-color-options {
