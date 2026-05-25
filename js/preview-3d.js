@@ -34,8 +34,12 @@
     resumeTimer: null,
     rafId: null,
     fillMode: 'tile',          // 渲染模式: 'tile' 平铺 | 'stretch' 拉伸 | 'shape' 形状包围
-    shapeType: 'circle',       // 包围形状: circle / diamond / hexagon / ellipse / heart / star / petal
-    shapeSize: 70              // 包围大小百分比 30-100
+    shapeType: 'circle',       // 包围形状: circle / diamond / hexagon / ellipse / heart / star / petal / custom-*
+    shapeSize: 70,             // 包围大小百分比 30-100
+    shapeCount: 1,             // 形状数量 1-9
+    shapeDensity: 50,          // 形状密度（间距控制）10-100
+    shapeArrangement: 'center',// 排列方式: center / grid / random / circular
+    customShapes: [],          // 自定义形状列表 [{name, paths}]，paths 为 SVG d 属性数组
   };
 
   /* 纹样源 canvas 引用（用于拉伸模式） */
@@ -1237,6 +1241,71 @@
       });
     }
 
+    /* --- 形状数量滑块 --- */
+    var shapeCountSlider = document.getElementById('shape-count-slider');
+    if (shapeCountSlider) {
+      shapeCountSlider.addEventListener('input', function () {
+        state.shapeCount = parseInt(this.value, 10);
+        var valEl = document.getElementById('shape-count-val');
+        if (valEl) valEl.textContent = this.value;
+        render();
+      });
+    }
+
+    /* --- 形状密度滑块 --- */
+    var shapeDensitySlider = document.getElementById('shape-density-slider');
+    if (shapeDensitySlider) {
+      shapeDensitySlider.addEventListener('input', function () {
+        state.shapeDensity = parseInt(this.value, 10);
+        var valEl = document.getElementById('shape-density-val');
+        if (valEl) valEl.textContent = this.value + '%';
+        render();
+      });
+    }
+
+    /* --- 排列方式切换 --- */
+    var arrangementSelect = document.getElementById('preview-shape-arrangement');
+    if (arrangementSelect) {
+      arrangementSelect.addEventListener('change', function () {
+        state.shapeArrangement = this.value;
+        render();
+      });
+    }
+
+    /* --- 自定义形状添加 --- */
+    var addCustomBtn = document.getElementById('btn-add-custom-shape');
+    if (addCustomBtn) {
+      addCustomBtn.addEventListener('click', function () {
+        var nameInput = document.getElementById('custom-shape-name');
+        var pathInput = document.getElementById('custom-shape-path');
+        var name = (nameInput.value || '').trim();
+        var pathStr = (pathInput.value || '').trim();
+        if (!name || !pathStr) {
+          showShapeHint('请填写形状名称和 SVG 路径');
+          return;
+        }
+        var typeKey = addCustomShape(name, pathStr);
+        if (!typeKey) {
+          showShapeHint('路径解析失败，请检查 SVG path 格式');
+          return;
+        }
+        // 添加到下拉框
+        var sel = document.getElementById('preview-shape-type');
+        if (sel) {
+          var opt = document.createElement('option');
+          opt.value = typeKey;
+          opt.textContent = name;
+          sel.appendChild(opt);
+          sel.value = typeKey;
+          state.shapeType = typeKey;
+        }
+        nameInput.value = '';
+        pathInput.value = '';
+        renderCustomShapeList();
+        render();
+      });
+    }
+
     /* --- 监听纹样选择事件（由纹样图库模块触发） --- */
     window.addEventListener('pattern-selected', function (e) {
       if (e.detail && e.detail.canvas) {
@@ -1309,17 +1378,109 @@
       }
 
     } else if (mode === 'shape') {
-      // 形状包围：在产品中心绘制指定形状，形状内平铺纹样
-      var size = (state.shapeSize || 70) / 100;
-      var maxR = Math.min(bounds.w, bounds.h) / 2;
-      var r = Math.max(1, maxR * size);
-      buildShapePath(tCtx, cx, cy, r, state.shapeType);
-      tCtx.clip();
-      tCtx.fillStyle = state.pattern;
-      tCtx.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
+      // 形状包围：支持多形状阵列
+      var positions = getShapePositions(cx, cy, bounds, state.shapeType, state.shapeCount, state.shapeDensity, state.shapeArrangement);
+      for (var si = 0; si < positions.length; si++) {
+        var sp = positions[si];
+        tCtx.save();
+        if (clipPathFn) {
+          clipPathFn(tCtx);
+          tCtx.clip();
+        }
+        buildShapePath(tCtx, sp.x, sp.y, Math.max(1, sp.r), state.shapeType);
+        tCtx.clip();
+        tCtx.fillStyle = state.pattern;
+        tCtx.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
+        tCtx.restore();
+      }
     }
 
     tCtx.restore();
+  }
+
+  /**
+   * 根据排列方式计算形状位置列表
+   * @returns {Array} [{x, y, r}, ...]
+   */
+  function getShapePositions(cx, cy, bounds, type, count, density, arrangement) {
+    var size = (state.shapeSize || 70) / 100;
+    var maxR = Math.min(bounds.w, bounds.h) / 2;
+    var baseR = Math.max(1, maxR * size);
+    var positions = [];
+
+    if (arrangement === 'center') {
+      // 居中：1个或同心环
+      if (count <= 1) {
+        positions.push({ x: cx, y: cy, r: baseR });
+      } else {
+        positions.push({ x: cx, y: cy, r: baseR });
+        var ringCount = count - 1;
+        var spacing = (density / 100) * baseR * 1.2 + baseR * 0.3;
+        for (var ri = 0; ri < ringCount; ri++) {
+          var ringR = baseR - (ri + 1) * spacing * 0.4;
+          if (ringR < 5) break;
+          positions.push({ x: cx, y: cy, r: ringR });
+        }
+      }
+
+    } else if (arrangement === 'grid') {
+      // 网格排列
+      var cols = Math.max(1, Math.ceil(Math.sqrt(count)));
+      var rows = Math.max(1, Math.ceil(count / cols));
+      var gapFactor = 1 + (100 - density) / 80;
+      var cellW = bounds.w / (cols * gapFactor);
+      var cellH = bounds.h / (rows * gapFactor);
+      var cellR = Math.max(1, Math.min(cellW, cellH) / 2 * (state.shapeSize / 100));
+      var startX = cx - (cols - 1) * cellW * gapFactor / 2;
+      var startY = cy - (rows - 1) * cellH * gapFactor / 2;
+      var placed = 0;
+      for (var row = 0; row < rows && placed < count; row++) {
+        for (var col = 0; col < cols && placed < count; col++) {
+          positions.push({
+            x: startX + col * cellW * gapFactor,
+            y: startY + row * cellH * gapFactor,
+            r: cellR
+          });
+          placed++;
+        }
+      }
+
+    } else if (arrangement === 'circular') {
+      // 环形排列（绕中心分布）
+      if (count <= 1) {
+        positions.push({ x: cx, y: cy, r: baseR });
+      } else {
+        var orbitR = maxR * (state.shapeSize / 100) * 0.55 * (density / 70);
+        var shapeR = baseR * 0.45;
+        for (var ci = 0; ci < count; ci++) {
+          var angle = (Math.PI * 2 / count) * ci - Math.PI / 2;
+          positions.push({
+            x: cx + orbitR * Math.cos(angle),
+            y: cy + orbitR * Math.sin(angle),
+            r: Math.max(1, shapeR)
+          });
+        }
+      }
+
+    } else if (arrangement === 'random') {
+      // 随机分布（确定性种子保持帧间稳定）
+      var seed = 42;
+      function seededRandom() {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+      }
+      var shrink = density / 100;
+      var shapeR2 = Math.max(1, baseR * shrink * 0.6);
+      for (var ri2 = 0; ri2 < count; ri2++) {
+        positions.push({
+          x: bounds.x + bounds.w * 0.15 + seededRandom() * bounds.w * 0.7,
+          y: bounds.y + bounds.h * 0.15 + seededRandom() * bounds.h * 0.7,
+          r: shapeR2 * (0.5 + seededRandom() * 0.5)
+        });
+      }
+    }
+
+    return positions;
   }
 
   /**
@@ -1412,11 +1573,184 @@
         break;
 
       default:
+        // 自定义形状或后备圆形
+        if (type.indexOf('custom-') === 0 && state.customShapes.length > 0) {
+          var idx = parseInt(type.replace('custom-', ''), 10);
+          var custom = state.customShapes[idx];
+          if (custom && custom.paths) {
+            drawCustomShape(c, cx, cy, r, custom.paths);
+            break;
+          }
+        }
         // 后备：圆形
         c.beginPath();
         c.arc(cx, cy, r, 0, Math.PI * 2);
         break;
     }
+  }
+
+  /**
+   * 绘制自定义形状（基于归一化坐标路径）
+   * @param {CanvasRenderingContext2D} c
+   * @param {number} cx,cy - 中心
+   * @param {number} r - 半径
+   * @param {Array} paths - [{cmds: [[type, ...args], ...]}, ...] 多子路径
+   */
+  function drawCustomShape(c, cx, cy, r, paths) {
+    c.beginPath();
+    for (var pi = 0; pi < paths.length; pi++) {
+      var cmds = paths[pi].cmds || paths[pi];
+      if (!cmds || !cmds.length) continue;
+      for (var ci = 0; ci < cmds.length; ci++) {
+        var cmd = cmds[ci];
+        var type = cmd[0];
+        var args = cmd.slice(1);
+        // 将归一化坐标 [-1,1] 映射到 [cx-r, cx+r]
+        var mapped = [];
+        for (var ai = 0; ai < args.length; ai++) {
+          var v = args[ai];
+          // 交替映射 x,y（坐标值），跳过绝对标志等
+          mapped.push(v * r);
+        }
+        if (type === 'M') {
+          c.moveTo(cx + mapped[0], cy + mapped[1]);
+        } else if (type === 'L') {
+          c.lineTo(cx + mapped[0], cy + mapped[1]);
+        } else if (type === 'C') {
+          c.bezierCurveTo(cx + mapped[0], cy + mapped[1], cx + mapped[2], cy + mapped[3], cx + mapped[4], cy + mapped[5]);
+        } else if (type === 'Q') {
+          c.quadraticCurveTo(cx + mapped[0], cy + mapped[1], cx + mapped[2], cy + mapped[3]);
+        } else if (type === 'Z') {
+          c.closePath();
+        }
+      }
+    }
+  }
+
+  /**
+   * 添加自定义形状
+   * @param {string} name - 形状名称
+   * @param {string} svgPath - SVG path d 属性字符串
+   * @returns {string} 类型标识 'custom-N'
+   */
+  function addCustomShape(name, svgPath) {
+    var paths = parseSVGPath(svgPath);
+    if (!paths || paths.length === 0) return null;
+    var idx = state.customShapes.length;
+    state.customShapes.push({ name: name, paths: paths });
+    return 'custom-' + idx;
+  }
+
+  /**
+   * 删除自定义形状
+   * @param {number} idx - 索引
+   */
+  function removeCustomShape(idx) {
+    if (idx >= 0 && idx < state.customShapes.length) {
+      state.customShapes.splice(idx, 1);
+      // 更新 shapeType 如果引用了已删除的自定义形状
+      if (state.shapeType === 'custom-' + idx) {
+        state.shapeType = 'circle';
+      }
+    }
+  }
+
+  /**
+   * 解析 SVG path d 属性为内部路径数据
+   * 支持的命令：M, L, C, Q, Z（大小写均可）
+   */
+  function parseSVGPath(d) {
+    if (!d || !d.trim()) return null;
+    var paths = [];
+    var current = { cmds: [] };
+    var tokens = d.match(/[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g);
+    if (!tokens) return null;
+
+    var i = 0;
+    while (i < tokens.length) {
+      var tok = tokens[i];
+      var upper = tok.toUpperCase();
+
+      if (upper === 'M' || upper === 'L' || upper === 'C' || upper === 'Q' ||
+          upper === 'Z' || upper === 'H' || upper === 'V') {
+        if (upper === 'M') {
+          if (current.cmds.length > 0) {
+            paths.push(current);
+            current = { cmds: [] };
+          }
+        }
+        var isLower = tok !== upper;
+        if (upper === 'Z') {
+          current.cmds.push(['Z']);
+          i++;
+          continue;
+        }
+        if (upper === 'H') {
+          var hx = parseFloat(tokens[i + 1]);
+          current.cmds.push(['L', isLower ? hx : hx, 0]);
+          i += 2;
+          continue;
+        }
+        if (upper === 'V') {
+          var hy = parseFloat(tokens[i + 1]);
+          current.cmds.push(['L', 0, isLower ? hy : hy]);
+          i += 2;
+          continue;
+        }
+
+        var argCount = upper === 'L' ? 2 : upper === 'C' ? 6 : upper === 'Q' ? 4 : 2;
+        var args = [];
+        for (var ai = 0; ai < argCount && i + 1 + ai < tokens.length; ai++) {
+          args.push(parseFloat(tokens[i + 1 + ai]));
+        }
+        current.cmds.push([upper, args]);
+        i += 1 + argCount;
+      } else {
+        // 隐式命令（重复上一个）
+        i++;
+      }
+    }
+
+    if (current.cmds.length > 0) paths.push(current);
+
+    // 归一化坐标到 [-1, 1] 范围
+    if (paths.length > 0) {
+      var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (var pi = 0; pi < paths.length; pi++) {
+        var cmds = paths[pi].cmds;
+        for (var ci = 0; ci < cmds.length; ci++) {
+          var c = cmds[ci];
+          var a = c[1];
+          if (Array.isArray(a)) {
+            for (var k = 0; k < a.length; k += 2) {
+              if (a[k] < minX) minX = a[k];
+              if (a[k] > maxX) maxX = a[k];
+              if (a[k + 1] < minY) minY = a[k + 1];
+              if (a[k + 1] > maxY) maxY = a[k + 1];
+            }
+          }
+        }
+      }
+      var rangeX = maxX - minX || 1;
+      var rangeY = maxY - minY || 1;
+      var offsetX = -(minX + maxX) / 2;
+      var offsetY = -(minY + maxY) / 2;
+      var normScale = 2 / Math.max(rangeX, rangeY);
+      for (var pi2 = 0; pi2 < paths.length; pi2++) {
+        var cmds2 = paths[pi2].cmds;
+        for (var ci2 = 0; ci2 < cmds2.length; ci2++) {
+          var c2 = cmds2[ci2];
+          if (Array.isArray(c2[1])) {
+            for (var k2 = 0; k2 < c2[1].length; k2 += 2) {
+              c2[1][k2] = (c2[1][k2] + offsetX) * normScale;
+              c2[1][k2 + 1] = (c2[1][k2 + 1] + offsetY) * normScale;
+            }
+          }
+        }
+      }
+    }
+
+    return paths;
   }
 
   /* ==================== 纹样应用 ==================== */
@@ -1463,10 +1797,64 @@
   /** 切换形状包围选项的显示/隐藏 */
   function toggleShapeOptions() {
     var show = state.fillMode === 'shape';
-    var shapeGroup = document.getElementById('shape-options-group');
-    var sizeGroup = document.getElementById('shape-size-group');
-    if (shapeGroup) shapeGroup.style.display = show ? '' : 'none';
-    if (sizeGroup) sizeGroup.style.display = show ? '' : 'none';
+    var groups = ['shape-options-group', 'shape-size-group', 'shape-count-group', 'shape-density-group', 'shape-arrangement-group', 'custom-shape-group'];
+    for (var i = 0; i < groups.length; i++) {
+      var el = document.getElementById(groups[i]);
+      if (el) el.style.display = show ? '' : 'none';
+    }
+  }
+
+  /** 显示形状提示消息 */
+  function showShapeHint(text) {
+    var hint = document.getElementById('custom-shape-hint');
+    if (hint) {
+      hint.textContent = text;
+      hint.style.opacity = '1';
+      setTimeout(function () { hint.style.opacity = '0'; }, 2000);
+    }
+  }
+
+  /** 渲染自定义形状列表 */
+  function renderCustomShapeList() {
+    var listEl = document.getElementById('custom-shape-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+    for (var i = 0; i < state.customShapes.length; i++) {
+      (function (idx) {
+        var item = document.createElement('div');
+        item.className = 'custom-shape-item';
+        item.innerHTML = '<span class="custom-shape-name">' + state.customShapes[idx].name +
+          '</span><button class="btn-delete-custom-shape" title="删除">&times;</button>';
+        item.querySelector('.btn-delete-custom-shape').addEventListener('click', function () {
+          removeCustomShape(idx);
+          // 从下拉框中移除
+          var sel = document.getElementById('preview-shape-type');
+          if (sel) {
+            for (var oi = 0; oi < sel.options.length; oi++) {
+              if (sel.options[oi].value === 'custom-' + idx) {
+                sel.remove(oi);
+                break;
+              }
+            }
+            // 修正剩余自定义选项的 value
+            for (var oj = 0; oj < sel.options.length; oj++) {
+              var val = sel.options[oj].value;
+              if (val.indexOf('custom-') === 0) {
+                var origIdx = parseInt(val.replace('custom-', ''), 10);
+                if (origIdx > idx) {
+                  sel.options[oj].value = 'custom-' + (origIdx - 1);
+                }
+              }
+            }
+            if (state.shapeType.indexOf('custom-') === 0) state.shapeType = 'circle';
+            sel.value = state.shapeType;
+          }
+          renderCustomShapeList();
+          render();
+        });
+        listEl.appendChild(item);
+      })(i);
+    }
   }
 
   /* ==================== 初始化 ==================== */
@@ -1514,7 +1902,13 @@
      */
     applyPattern: function (patternCanvas) {
       applyPattern(patternCanvas);
-    }
+    },
+
+    /** 获取/设置渲染状态 */
+    getState: function () { return state; },
+
+    /** 刷新自定义形状列表 */
+    refreshCustomShapes: function () { renderCustomShapeList(); }
   };
 
 })();
