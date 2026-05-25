@@ -2586,3 +2586,102 @@ body {
         padding: 2px 8px;
     }
 }
+
+/* ==================== 产品规格设置 ==================== */
+.dim-settings {
+    margin-top: 6px;
+}
+
+.dim-toggle-row {
+    margin-bottom: 8px;
+}
+
+.dim-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.dim-toggle-label input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--ru-cyan);
+    cursor: pointer;
+}
+
+.dim-toggle-label span {
+    opacity: 0.85;
+}
+
+.dim-input-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.dim-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+}
+
+.dim-field > span {
+    font-size: 11px;
+    color: var(--text-light);
+}
+
+.dim-input {
+    width: 100%;
+    padding: 5px 8px;
+    font-size: 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    background: var(--ding-white);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    transition: border-color var(--transition);
+    box-sizing: border-box;
+}
+
+.dim-input:focus {
+    outline: none;
+    border-color: var(--ru-cyan);
+}
+
+/* 去除 number 输入框的上下箭头（跨浏览器） */
+.dim-input::-webkit-inner-spin-button,
+.dim-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.dim-input[type="number"] {
+    -moz-appearance: textfield;
+}
+
+.dim-unit-row {
+    margin-bottom: 2px;
+}
+
+.dim-select {
+    width: 100%;
+    padding: 5px 8px;
+    font-size: 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    background: var(--ding-white);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: border-color var(--transition);
+    box-sizing: border-box;
+}
+
+.dim-select:focus {
+    outline: none;
+    border-color: var(--ru-cyan);
+}
