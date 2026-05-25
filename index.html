@@ -528,9 +528,38 @@
                         </select>
                     </div>
                     <div class="setting-group" id="shape-size-group" style="display:none">
-                        <label>包围大小</label>
-                        <input type="range" id="shape-size-slider" min="30" max="100" value="70">
+                        <label>形状大小</label>
+                        <input type="range" id="shape-size-slider" min="10" max="100" value="70">
                         <span id="shape-size-val" style="font-size:12px;color:var(--text-light)">70%</span>
+                    </div>
+                    <div class="setting-group" id="shape-count-group" style="display:none">
+                        <label>形状数量</label>
+                        <input type="range" id="shape-count-slider" min="1" max="12" value="1">
+                        <span id="shape-count-val" style="font-size:12px;color:var(--text-light)">1</span>
+                    </div>
+                    <div class="setting-group" id="shape-density-group" style="display:none">
+                        <label>排列密度</label>
+                        <input type="range" id="shape-density-slider" min="10" max="100" value="50">
+                        <span id="shape-density-val" style="font-size:12px;color:var(--text-light)">50%</span>
+                    </div>
+                    <div class="setting-group" id="shape-arrangement-group" style="display:none">
+                        <label>排列方式</label>
+                        <select id="preview-shape-arrangement">
+                            <option value="center">居中</option>
+                            <option value="grid">网格</option>
+                            <option value="circular">环形</option>
+                            <option value="random">随机</option>
+                        </select>
+                    </div>
+                    <div class="setting-group" id="custom-shape-group" style="display:none">
+                        <label>自定义形状</label>
+                        <div class="custom-shape-inputs">
+                            <input type="text" id="custom-shape-name" class="form-input" placeholder="形状名称" maxlength="10" style="width:100%;margin-bottom:6px;padding:6px 8px;font-size:12px;border:1px solid var(--border-light);border-radius:4px;background:var(--ding-white);color:var(--text-primary)">
+                            <input type="text" id="custom-shape-path" class="form-input" placeholder="SVG path (如 M 0 -0.8 L 0.6 0.4 L -0.6 0.4 Z)" style="width:100%;margin-bottom:6px;padding:6px 8px;font-size:11px;border:1px solid var(--border-light);border-radius:4px;background:var(--ding-white);color:var(--text-primary);font-family:monospace">
+                            <button class="btn btn-small" id="btn-add-custom-shape" style="width:100%;padding:5px 0;font-size:12px">+ 添加形状</button>
+                        </div>
+                        <span id="custom-shape-hint" class="custom-shape-hint"></span>
+                        <div id="custom-shape-list" class="custom-shape-list"></div>
                     </div>
                     <div class="setting-group">
                         <label>光照强度</label>
