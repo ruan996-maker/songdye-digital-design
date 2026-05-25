@@ -32,8 +32,14 @@
     autoTime: 0,               // 自动旋转时间累积
     snapBack: false,           // 是否正在回弹
     resumeTimer: null,
-    rafId: null
+    rafId: null,
+    fillMode: 'tile',          // 渲染模式: 'tile' 平铺 | 'stretch' 拉伸 | 'shape' 形状包围
+    shapeType: 'circle',       // 包围形状: circle / diamond / hexagon / ellipse / heart / star / petal
+    shapeSize: 70              // 包围大小百分比 30-100
   };
+
+  /* 纹样源 canvas 引用（用于拉伸模式） */
+  var _patternSourceCanvas = null;
 
   /* 自定义产品列表 */
   var _customProducts = [];    // [{ id, name, img, template, mapping, opacity, areaX, areaY, areaSize }]
@@ -205,11 +211,11 @@
     ctx.restore();
 
     // — 主体填充 —
-    buildScarfPath(ctx);
     if (state.pattern) {
-      ctx.fillStyle = state.pattern;
-      ctx.fill();
+      var scarfBounds = { x: CX - 262, y: CY - 150, w: 524, h: 310 };
+      applyPatternByMode(ctx, scarfBounds, buildScarfPath);
     } else {
+      buildScarfPath(ctx);
       var g = ctx.createLinearGradient(CX - 260, CY - 100, CX + 260, CY + 120);
       g.addColorStop(0, '#eedcc0');
       g.addColorStop(0.35, '#e2cda8');
@@ -312,12 +318,8 @@
 
     // — 胸前纹样 —
     if (state.pattern) {
-      ctx.save();
-      buildTshirtChestPath(ctx);
-      ctx.clip();
-      ctx.fillStyle = state.pattern;
-      ctx.fillRect(CX - 105, CY - 100, 210, 175);
-      ctx.restore();
+      var chestBounds = { x: CX - 105, y: CY - 100, w: 210, h: 175 };
+      applyPatternByMode(ctx, chestBounds, buildTshirtChestPath);
     }
 
     // — 边缘描线 —
@@ -390,12 +392,8 @@
     // — 扇面底色 / 纹样 —
     buildFanPath(ctx);
     if (state.pattern) {
-      ctx.save();
-      buildFanPath(ctx);
-      ctx.clip();
-      ctx.fillStyle = state.pattern;
-      ctx.fill();
-      ctx.restore();
+      var fanBounds = { x: fcx - r, y: fcy - r, w: r * 2, h: r * 2 };
+      applyPatternByMode(ctx, fanBounds, buildFanPath);
     } else {
       var rg = ctx.createRadialGradient(fcx, fcy, Math.max(1, 20), fcx, fcy, r);
       rg.addColorStop(0, '#f8ead5');
@@ -511,11 +509,11 @@
     ctx.restore();
 
     // — 主体填充 —
-    buildBookmarkPath(ctx);
     if (state.pattern) {
-      ctx.fillStyle = state.pattern;
-      ctx.fill();
+      var bkBounds = { x: bx, y: by, w: bw, h: bh };
+      applyPatternByMode(ctx, bkBounds, buildBookmarkPath);
     } else {
+      buildBookmarkPath(ctx);
       var g = ctx.createLinearGradient(bx, by, bx + bw, by + bh);
       g.addColorStop(0, '#f7f2ea');
       g.addColorStop(0.3, '#f0e8da');
@@ -1209,6 +1207,36 @@
       });
     }
 
+    /* --- 渲染模式切换 --- */
+    var fillModeSelect = document.getElementById('preview-fill-mode');
+    if (fillModeSelect) {
+      fillModeSelect.addEventListener('change', function () {
+        state.fillMode = this.value;
+        toggleShapeOptions();
+        render();
+      });
+    }
+
+    /* --- 包围形状切换 --- */
+    var shapeTypeSelect = document.getElementById('preview-shape-type');
+    if (shapeTypeSelect) {
+      shapeTypeSelect.addEventListener('change', function () {
+        state.shapeType = this.value;
+        render();
+      });
+    }
+
+    /* --- 包围大小滑块 --- */
+    var shapeSizeSlider = document.getElementById('shape-size-slider');
+    if (shapeSizeSlider) {
+      shapeSizeSlider.addEventListener('input', function () {
+        state.shapeSize = parseInt(this.value, 10);
+        var valEl = document.getElementById('shape-size-val');
+        if (valEl) valEl.textContent = this.value + '%';
+        render();
+      });
+    }
+
     /* --- 监听纹样选择事件（由纹样图库模块触发） --- */
     window.addEventListener('pattern-selected', function (e) {
       if (e.detail && e.detail.canvas) {
@@ -1242,6 +1270,155 @@
     }
   }
 
+  /* ==================== 渲染模式引擎 ==================== */
+
+  /**
+   * 根据当前 fillMode 在指定区域渲染纹样
+   * @param {CanvasRenderingContext2D} tCtx - 目标 2D 上下文
+   * @param {object} bounds - {x, y, w, h} 产品区域边界
+   * @param {function|null} clipPathFn - 产品裁剪路径函数（如 buildScarfPath）
+   */
+  function applyPatternByMode(tCtx, bounds, clipPathFn) {
+    if (!state.pattern) return;
+    var mode = state.fillMode || 'tile';
+
+    tCtx.save();
+
+    // 先裁剪到产品路径
+    if (clipPathFn) {
+      clipPathFn(tCtx);
+      tCtx.clip();
+    }
+
+    var cx = bounds.x + bounds.w / 2;
+    var cy = bounds.y + bounds.h / 2;
+
+    if (mode === 'tile') {
+      // 平铺重复（默认行为）
+      tCtx.fillStyle = state.pattern;
+      tCtx.fill();
+
+    } else if (mode === 'stretch') {
+      // 拉伸填充：将源 canvas 拉伸到整个边界
+      if (_patternSourceCanvas) {
+        tCtx.drawImage(_patternSourceCanvas, bounds.x, bounds.y, bounds.w, bounds.h);
+      } else {
+        // 后备：用平铺
+        tCtx.fillStyle = state.pattern;
+        tCtx.fill();
+      }
+
+    } else if (mode === 'shape') {
+      // 形状包围：在产品中心绘制指定形状，形状内平铺纹样
+      var size = (state.shapeSize || 70) / 100;
+      var maxR = Math.min(bounds.w, bounds.h) / 2;
+      var r = Math.max(1, maxR * size);
+      buildShapePath(tCtx, cx, cy, r, state.shapeType);
+      tCtx.clip();
+      tCtx.fillStyle = state.pattern;
+      tCtx.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
+    }
+
+    tCtx.restore();
+  }
+
+  /**
+   * 绘制各种包围形状路径
+   * @param {CanvasRenderingContext2D} c - 上下文
+   * @param {number} cx - 中心 X
+   * @param {number} cy - 中心 Y
+   * @param {number} r - 半径
+   * @param {string} type - 形状类型
+   */
+  function buildShapePath(c, cx, cy, r, type) {
+    switch (type) {
+      case 'circle':
+        c.beginPath();
+        c.arc(cx, cy, r, 0, Math.PI * 2);
+        break;
+
+      case 'diamond':
+        c.beginPath();
+        c.moveTo(cx, cy - r);
+        c.lineTo(cx + r, cy);
+        c.lineTo(cx, cy + r);
+        c.lineTo(cx - r, cy);
+        c.closePath();
+        break;
+
+      case 'hexagon':
+        c.beginPath();
+        for (var i = 0; i < 6; i++) {
+          var a = Math.PI / 3 * i - Math.PI / 6;
+          var px = cx + r * Math.cos(a);
+          var py = cy + r * Math.sin(a);
+          if (i === 0) c.moveTo(px, py);
+          else c.lineTo(px, py);
+        }
+        c.closePath();
+        break;
+
+      case 'ellipse':
+        c.beginPath();
+        c.ellipse(cx, cy, r, r * 0.65, 0, 0, Math.PI * 2);
+        break;
+
+      case 'heart':
+        c.beginPath();
+        c.moveTo(cx, cy + r * 0.7);
+        c.bezierCurveTo(cx - r * 1.2, cy - r * 0.1, cx - r * 0.7, cy - r, cx, cy - r * 0.4);
+        c.bezierCurveTo(cx + r * 0.7, cy - r, cx + r * 1.2, cy - r * 0.1, cx, cy + r * 0.7);
+        c.closePath();
+        break;
+
+      case 'star':
+        c.beginPath();
+        var spikes = 5;
+        var outerR = r;
+        var innerR = r * 0.4;
+        for (var j = 0; j < spikes * 2; j++) {
+          var sr = j % 2 === 0 ? outerR : innerR;
+          var sa = Math.PI / 2 * -1 + (Math.PI / spikes) * j;
+          var sx = cx + sr * Math.cos(sa);
+          var sy = cy + sr * Math.sin(sa);
+          if (j === 0) c.moveTo(sx, sy);
+          else c.lineTo(sx, sy);
+        }
+        c.closePath();
+        break;
+
+      case 'petal':
+        // 六瓣花形
+        c.beginPath();
+        var petals = 6;
+        for (var k = 0; k < petals; k++) {
+          var pa = (Math.PI * 2 / petals) * k - Math.PI / 2;
+          var p1x = cx + r * Math.cos(pa);
+          var p1y = cy + r * Math.sin(pa);
+          if (k === 0) c.moveTo(p1x, p1y);
+          var cpR = r * 0.55;
+          var cpA1 = pa + Math.PI / petals;
+          var cpA2 = pa - Math.PI / petals;
+          c.quadraticCurveTo(
+            cx + cpR * Math.cos(cpA1), cy + cpR * Math.sin(cpA1),
+            cx, cy
+          );
+          c.quadraticCurveTo(
+            cx + cpR * Math.cos(cpA2), cy + cpR * Math.sin(cpA2),
+            p1x, p1y
+          );
+        }
+        c.closePath();
+        break;
+
+      default:
+        // 后备：圆形
+        c.beginPath();
+        c.arc(cx, cy, r, 0, Math.PI * 2);
+        break;
+    }
+  }
+
   /* ==================== 纹样应用 ==================== */
   function applyPattern(patternCanvas) {
     if (!patternCanvas) {
@@ -1271,6 +1448,7 @@
       }
 
       state.pattern = ctx.createPattern(patternCanvas, 'repeat');
+      _patternSourceCanvas = patternCanvas;  // 保存引用用于拉伸模式
       if (!state.pattern) {
         console.error('[Preview3D] createPattern 返回 null');
         return;
@@ -1280,6 +1458,15 @@
     } catch (err) {
       console.warn('[Preview3D] 创建纹样 pattern 失败:', err);
     }
+  }
+
+  /** 切换形状包围选项的显示/隐藏 */
+  function toggleShapeOptions() {
+    var show = state.fillMode === 'shape';
+    var shapeGroup = document.getElementById('shape-options-group');
+    var sizeGroup = document.getElementById('shape-size-group');
+    if (shapeGroup) shapeGroup.style.display = show ? '' : 'none';
+    if (sizeGroup) sizeGroup.style.display = show ? '' : 'none';
   }
 
   /* ==================== 初始化 ==================== */
