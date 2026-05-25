@@ -40,7 +40,56 @@
     shapeDensity: 50,          // 形状密度（间距控制）10-100
     shapeArrangement: 'center',// 排列方式: center / grid / random / circular
     customShapes: [],          // 自定义形状列表 [{name, paths}]，paths 为 SVG d 属性数组
+    // 产品规格
+    showDimensions: false,      // 是否显示尺寸标注
+    dimUnit: 'cm',              // 尺寸单位: mm / cm / m / in / ft
+    dimWidth: 180,              // 产品宽度（基准像素，按产品类型有默认值）
+    dimHeight: 120,             // 产品高度（基准像素）
   };
+
+  /* 单位标签映射 */
+  var UNIT_LABELS = { mm: 'mm', cm: 'cm', m: 'm', 'in': 'in', ft: 'ft' };
+
+  /* 各产品类型的默认尺寸（像素），用于比例计算 */
+  var PRODUCT_DEFAULT_DIMS = {
+    scarf:    { w: 524, h: 310, realW: 180, realH: 110 },
+    tshirt:   { w: 320, h: 340, realW: 70, realH: 75 },
+    fan:      { w: 384, h: 384, realW: 34, realH: 34 },
+    bookmark: { w: 116, h: 370, realW: 5, realH: 16 }
+  };
+
+  /* 单位到厘米的换算 */
+  var UNIT_TO_CM = { mm: 0.1, cm: 1, m: 100, 'in': 2.54, ft: 30.48 };
+
+  /**
+   * 将内部像素尺寸转为指定单位的显示值
+   * @param {number} px - 内部像素值
+   * @param {string} unit - 目标单位
+   * @param {string} product - 产品类型
+   * @returns {number}
+   */
+  function pxToDisplay(px, unit, product) {
+    var d = PRODUCT_DEFAULT_DIMS[product] || PRODUCT_DEFAULT_DIMS.scarf;
+    // px / d.w = real / d.realW  →  real = px * d.realW / d.w
+    var realCm = px * d.realW / d.w;  // 以宽度为基准换算
+    var cmPerUnit = UNIT_TO_CM[unit] || 1;
+    return realCm / cmPerUnit;
+  }
+
+  /**
+   * 格式化尺寸显示值（保留合理精度）
+   */
+  function formatDim(val, unit) {
+    if (unit === 'mm' || unit === 'cm' || unit === 'in' || unit === 'ft') {
+      if (val < 10) return val.toFixed(2);
+      if (val < 100) return val.toFixed(1);
+      return val.toFixed(0);
+    }
+    // 米
+    if (val < 1) return val.toFixed(3);
+    if (val < 10) return val.toFixed(2);
+    return val.toFixed(1);
+  }
 
   /* 纹样源 canvas 引用（用于拉伸模式） */
   var _patternSourceCanvas = null;
@@ -1007,6 +1056,16 @@
     state.autoRotate = true;
     state.autoTime = 0;
     window.Preview3D.currentProduct = productId;
+
+    // 更新尺寸输入框为当前产品的默认尺寸
+    var d = PRODUCT_DEFAULT_DIMS[productId] || PRODUCT_DEFAULT_DIMS.scarf;
+    state.dimWidth = d.realW;
+    state.dimHeight = d.realH;
+    var dimWInput = document.getElementById('dim-width-input');
+    var dimHInput = document.getElementById('dim-height-input');
+    if (dimWInput) dimWInput.value = d.realW;
+    if (dimHInput) dimHInput.value = d.realH;
+
     render();
   }
 
@@ -1015,6 +1074,176 @@
     btn.addEventListener('click', function () {
       switchToProduct(this.getAttribute('data-product') || 'scarf');
     });
+  }
+
+  /* ==================== 尺寸标注绘制 ==================== */
+
+  /** 绘制尺寸标注线（宽度和高度） */
+  function drawDimensions() {
+    if (!state.showDimensions) return;
+
+    var dark = isDarkBg();
+    var textColor = dark ? 'rgba(255,255,255,0.75)' : 'rgba(60,50,40,0.75)';
+    var lineColor = dark ? 'rgba(255,255,255,0.4)' : 'rgba(100,85,65,0.4)';
+    var arrowColor = dark ? 'rgba(255,255,255,0.55)' : 'rgba(100,85,65,0.55)';
+    var bgColor = dark ? 'rgba(42,37,32,0.85)' : 'rgba(245,240,232,0.85)';
+
+    var s = Math.max(MIN_SCALE, state.scale);
+    var unit = state.dimUnit || 'cm';
+    var product = state.product;
+    var d = PRODUCT_DEFAULT_DIMS[product] || PRODUCT_DEFAULT_DIMS.scarf;
+
+    // 计算实际像素边界（考虑缩放和水平旋转压缩）
+    var cosR = Math.abs(Math.cos(state.rotation));
+    var effW = d.w * s * cosR;
+    var effH = d.h * s;
+
+    // 在 canvas 上定位产品视觉中心
+    var productCenterX = CX;
+    var productCenterY = CY;
+
+    // 对齐产品中心偏移（各产品有不同 Y 偏移）
+    var yOffsetMap = { scarf: 0, tshirt: 15, fan: 68, bookmark: 0 };
+    var yOff = yOffsetMap[product] || 0;
+    productCenterY += yOff * s;
+
+    var margin = 28; // 标注线距产品的间距
+    var arrowLen = 6;
+
+    // 用用户设置的尺寸值来显示（已按单位）
+    var displayW = formatDim(state.dimWidth, unit) + ' ' + (UNIT_LABELS[unit] || unit);
+    var displayH = formatDim(state.dimHeight, unit) + ' ' + (UNIT_LABELS[unit] || unit);
+
+    ctx.save();
+
+    // === 宽度标注（下方） ===
+    var wY = productCenterY + effH / 2 + margin;
+    var wX1 = productCenterX - effW / 2;
+    var wX2 = productCenterX + effW / 2;
+
+    // 引出线
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(wX1, productCenterY + effH / 2 + 4);
+    ctx.lineTo(wX1, wY + 4);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(wX2, productCenterY + effH / 2 + 4);
+    ctx.lineTo(wX2, wY + 4);
+    ctx.stroke();
+
+    // 标注线
+    ctx.strokeStyle = arrowColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(wX1 + arrowLen, wY);
+    ctx.lineTo(wX2 - arrowLen, wY);
+    ctx.stroke();
+
+    // 箭头
+    drawArrowHead(ctx, wX1, wY, 1, arrowColor);
+    drawArrowHead(ctx, wX2, wY, -1, arrowColor);
+
+    // 宽度文字
+    drawDimLabel(ctx, productCenterX, wY, displayW, textColor, bgColor);
+
+    // === 高度标注（左侧） ===
+    var hX = productCenterX - effW / 2 - margin;
+    var hY1 = productCenterY - effH / 2;
+    var hY2 = productCenterY + effH / 2;
+
+    // 引出线
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(productCenterX - effW / 2 - 4, hY1);
+    ctx.lineTo(hX - 4, hY1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(productCenterX - effW / 2 - 4, hY2);
+    ctx.lineTo(hX - 4, hY2);
+    ctx.stroke();
+
+    // 标注线
+    ctx.strokeStyle = arrowColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(hX, hY1 + arrowLen);
+    ctx.lineTo(hX, hY2 - arrowLen);
+    ctx.stroke();
+
+    // 箭头
+    drawArrowHead(ctx, hX, hY1, 2, arrowColor); // 向下
+    drawArrowHead(ctx, hX, hY2, -2, arrowColor); // 向上
+
+    // 高度文字（竖排显示）
+    drawDimLabel(ctx, hX, productCenterY, displayH, textColor, bgColor, true);
+
+    ctx.restore();
+  }
+
+  /** 绘制箭头尖 direction: 1=右, -1=左, 2=下, -2=上 */
+  function drawArrowHead(c, x, y, direction, color) {
+    c.save();
+    c.fillStyle = color;
+    c.beginPath();
+    if (direction === 1 || direction === -1) {
+      var dx = direction * 6;
+      c.moveTo(x, y);
+      c.lineTo(x + dx, y - 3);
+      c.lineTo(x + dx, y + 3);
+    } else {
+      var dy = (direction / 2) * 6;
+      c.moveTo(x, y);
+      c.lineTo(x - 3, y + dy);
+      c.lineTo(x + 3, y + dy);
+    }
+    c.closePath();
+    c.fill();
+    c.restore();
+  }
+
+  /** 绘制尺寸标注文字 */
+  function drawDimLabel(c, x, y, text, textColor, bgColor, vertical) {
+    c.save();
+    c.font = '11px "Noto Serif SC", "PingFang SC", serif';
+    var metrics = c.measureText(text);
+    var tw = metrics.width;
+    var th = 14;
+    var pad = 4;
+
+    if (vertical) {
+      // 竖排：逐字绘制
+      var totalH = text.length * (th - 2) + pad * 2;
+      var totalW = Math.max(tw, 16) + pad * 2;
+
+      c.fillStyle = bgColor;
+      c.beginPath();
+      roundRectPath(c, x - totalW / 2, y - totalH / 2, totalW, totalH, 3);
+      c.fill();
+
+      c.fillStyle = textColor;
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      for (var i = 0; i < text.length; i++) {
+        c.fillText(text[i], x, y - totalH / 2 + pad + (th - 2) / 2 + i * (th - 2));
+      }
+    } else {
+      var labelW = tw + pad * 2;
+      var labelH = th + pad * 2;
+
+      c.fillStyle = bgColor;
+      c.beginPath();
+      roundRectPath(c, x - labelW / 2, y - labelH / 2, labelW, labelH, 3);
+      c.fill();
+
+      c.fillStyle = textColor;
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(text, x, y);
+    }
+    c.restore();
   }
 
   /* ==================== 主渲染 ==================== */
@@ -1062,6 +1291,9 @@
     }
 
     ctx.restore();
+
+    // 绘制尺寸标注（在产品变换之外，不受旋转/缩放影响标注线位置）
+    drawDimensions();
 
     // 更新公开数据接口
     window.Preview3D.rotationAngle = state.rotation;
@@ -1337,6 +1569,49 @@
         }
       });
     }
+
+    /* --- 产品规格设置 --- */
+    var dimToggle = document.getElementById('dim-toggle');
+    if (dimToggle) {
+      dimToggle.addEventListener('change', function () {
+        state.showDimensions = this.checked;
+        render();
+      });
+    }
+
+    var dimUnitSel = document.getElementById('dim-unit-select');
+    if (dimUnitSel) {
+      dimUnitSel.addEventListener('change', function () {
+        state.dimUnit = this.value;
+        render();
+      });
+    }
+
+    var dimWInput = document.getElementById('dim-width-input');
+    if (dimWInput) {
+      dimWInput.addEventListener('input', function () {
+        var val = parseFloat(this.value);
+        if (!isNaN(val) && val > 0) {
+          state.dimWidth = val;
+          render();
+        }
+      });
+    }
+
+    var dimHInput = document.getElementById('dim-height-input');
+    if (dimHInput) {
+      dimHInput.addEventListener('input', function () {
+        var val = parseFloat(this.value);
+        if (!isNaN(val) && val > 0) {
+          state.dimHeight = val;
+          render();
+        }
+      });
+    }
+
+    // 产品切换时更新默认尺寸
+    var origBindProductButton = bindProductButton;
+    // bindProductButton 已在上面定义，通过 product-btn click 更新
   }
 
   /* ==================== 渲染模式引擎 ==================== */
