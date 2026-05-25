@@ -508,6 +508,31 @@
                         </select>
                     </div>
                     <div class="setting-group">
+                        <label>渲染模式</label>
+                        <select id="preview-fill-mode">
+                            <option value="tile">平铺重复</option>
+                            <option value="stretch">拉伸填充</option>
+                            <option value="shape">形状包围</option>
+                        </select>
+                    </div>
+                    <div class="setting-group" id="shape-options-group" style="display:none">
+                        <label>包围形状</label>
+                        <select id="preview-shape-type">
+                            <option value="circle">圆形</option>
+                            <option value="diamond">菱形</option>
+                            <option value="hexagon">六边形</option>
+                            <option value="ellipse">椭圆</option>
+                            <option value="heart">心形</option>
+                            <option value="star">星形</option>
+                            <option value="petal">花瓣</option>
+                        </select>
+                    </div>
+                    <div class="setting-group" id="shape-size-group" style="display:none">
+                        <label>包围大小</label>
+                        <input type="range" id="shape-size-slider" min="30" max="100" value="70">
+                        <span id="shape-size-val" style="font-size:12px;color:var(--text-light)">70%</span>
+                    </div>
+                    <div class="setting-group">
                         <label>光照强度</label>
                         <input type="range" id="light-slider" min="0" max="100" value="70">
                     </div>
