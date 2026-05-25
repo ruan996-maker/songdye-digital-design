@@ -573,6 +573,39 @@
                             <button class="bg-opt" data-bg="warm" style="background:#e8ddd0">#e8ddd0</button>
                         </div>
                     </div>
+                    <div class="setting-group">
+                        <label>产品规格</label>
+                        <div class="dim-settings">
+                            <div class="dim-toggle-row">
+                                <label class="dim-toggle-label">
+                                    <input type="checkbox" id="dim-toggle">
+                                    <span>显示尺寸标注</span>
+                                </label>
+                            </div>
+                            <div class="dim-input-row">
+                                <label class="dim-field">
+                                    <span>宽度</span>
+                                    <input type="number" id="dim-width-input" class="dim-input" value="180" min="0.1" max="99999" step="0.1">
+                                </label>
+                                <label class="dim-field">
+                                    <span>高度</span>
+                                    <input type="number" id="dim-height-input" class="dim-input" value="110" min="0.1" max="99999" step="0.1">
+                                </label>
+                            </div>
+                            <div class="dim-unit-row">
+                                <label class="dim-field">
+                                    <span>单位</span>
+                                    <select id="dim-unit-select" class="dim-select">
+                                        <option value="mm">毫米 (mm)</option>
+                                        <option value="cm" selected>厘米 (cm)</option>
+                                        <option value="m">米 (m)</option>
+                                        <option value="in">英寸 (in)</option>
+                                        <option value="ft">英尺 (ft)</option>
+                                    </select>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                     <button class="btn btn-primary" id="btn-render-3d">重新渲染</button>
                 </div>
             </div>
