@@ -65,6 +65,7 @@
 
         // 通知模块切换
         EventBus.emit('module-changed', { module: moduleName });
+        EventBus.emit('module-switched', moduleName); // Kimi 助手使用此事件
 
         // 切换到预览模块时刷新纹样下拉框
         if (moduleName === 'preview') {
@@ -121,6 +122,11 @@
         initialized[currentModule] = true;
         if (window.PatternLib && window.PatternLib.init) {
             window.PatternLib.init();
+        }
+
+        // 初始化 Kimi AI 助手
+        if (window.KimiAssistant && window.KimiAssistant.init) {
+            window.KimiAssistant.init();
         }
 
         // 统计信息
