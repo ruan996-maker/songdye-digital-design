@@ -13,6 +13,7 @@
   /* ==================== 状态 ==================== */
   var state = {
     apiKey: '',
+    proxyUrl: '',       // CORS 代理地址（留空则直连，如 'https://your-worker.your-name.workers.dev'）
     model: DEFAULT_MODEL,
     conversations: [],   // [{role, content}]
     isStreaming: false,
@@ -149,7 +150,13 @@
       return;
     }
 
-    fetch(API_BASE, {
+    // 构建请求 URL（支持 CORS 代理）
+    var apiUrl = API_BASE;
+    if (state.proxyUrl) {
+      apiUrl = state.proxyUrl.replace(/\/+$/, '') + '/' + API_BASE;
+    }
+
+    fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -163,20 +170,20 @@
       })
     }).then(function (response) {
       if (!response.ok) {
-        return response.json().then(function (data) {
-          var errMsg = 'HTTP ' + response.status;
-          if (data.error && data.error.message) {
-            errMsg = data.error.message;
-          }
+        return response.text().then(function (body) {
+          var errMsg = '请求失败 (HTTP ' + response.status + ')';
+          try {
+            var data = JSON.parse(body);
+            if (data.error && data.error.message) errMsg = data.error.message;
+          } catch (e) { /* 非 JSON 响应体 */ }
           if (response.status === 401) {
             errMsg = 'API Key 无效或已过期，请在 platform.moonshot.cn 重新获取';
+          } else if (response.status === 403) {
+            errMsg = 'API Key 权限不足，请确认账户状态';
           } else if (response.status === 429) {
             errMsg = '请求频率超限，请稍后再试';
           }
           throw new Error(errMsg);
-        }).catch(function (e) {
-          if (e.message && e.message.indexOf('HTTP ') === 0) throw e;
-          throw new Error('请求失败，请检查网络连接后重试');
         });
       }
 
@@ -227,7 +234,11 @@
     }).catch(function (err) {
       state.isStreaming = false;
       updateUI('error');
-      if (onError) onError(err);
+      var msg = err.message || '未知错误';
+      if (msg === 'Failed to fetch' || msg === 'NetworkError' || msg === 'TypeError') {
+        msg = '网络请求失败。如果确认 API Key 正确，可能需要配置 CORS 代理（在设置中填写代理地址）';
+      }
+      if (onError) onError({ message: msg });
     });
   }
 
@@ -509,6 +520,19 @@
       btn.classList.toggle('active', !!state.apiKey);
     }
     // 显示/隐藏聊天区域
+    toggleKeyChatView();
+  }
+
+  function saveProxyUrl(url) {
+    state.proxyUrl = url.trim();
+    try {
+      localStorage.setItem('songdye_kimi_proxy', state.proxyUrl);
+    } catch (e) {}
+    var input = getEl('kimi-proxy-input');
+    if (input) input.value = state.proxyUrl;
+  }
+
+  function toggleKeyChatView() {
     var chatArea = getEl('kimi-chat-area');
     var keyArea = getEl('kimi-key-area');
     if (chatArea) chatArea.style.display = state.apiKey ? 'block' : 'none';
@@ -518,8 +542,10 @@
   function loadApiKey() {
     try {
       state.apiKey = localStorage.getItem('songdye_kimi_key') || '';
+      state.proxyUrl = localStorage.getItem('songdye_kimi_proxy') || '';
     } catch (e) {
       state.apiKey = '';
+      state.proxyUrl = '';
     }
     return state.apiKey;
   }
@@ -612,11 +638,29 @@
       });
     }
 
+    // 初始化 CORS 代理输入框
+    var proxyInput = getEl('kimi-proxy-input');
+    if (proxyInput) {
+      proxyInput.value = state.proxyUrl;
+      proxyInput.addEventListener('change', function () {
+        saveProxyUrl(this.value);
+      });
+    }
+
+    // 绑定代理设置按钮（齿轮图标）
+    var proxyToggle = getEl('kimi-proxy-toggle');
+    if (proxyToggle) {
+      proxyToggle.addEventListener('click', function () {
+        var box = getEl('kimi-proxy-box');
+        if (box) {
+          var isHidden = box.style.display === 'none';
+          box.style.display = isHidden ? 'block' : 'none';
+        }
+      });
+    }
+
     // 显示/隐藏聊天区域
-    var chatArea = getEl('kimi-chat-area');
-    var keyArea = getEl('kimi-key-area');
-    if (chatArea) chatArea.style.display = state.apiKey ? 'block' : 'none';
-    if (keyArea) keyArea.style.display = state.apiKey ? 'none' : 'flex';
+    toggleKeyChatView();
 
     // 绑定发送按钮
     var sendBtn = getEl('kimi-send-btn');
@@ -683,9 +727,11 @@
     setContextData: setContextData,
     clearConversations: clearConversations,
     saveApiKey: saveApiKey,
+    saveProxyUrl: saveProxyUrl,
     getState: function () {
       return {
         apiKey: !!state.apiKey,
+        proxyUrl: state.proxyUrl,
         module: state.currentModule,
         isStreaming: state.isStreaming,
         messageCount: state.conversations.length
