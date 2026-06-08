@@ -7,8 +7,8 @@
   'use strict';
 
   /* ==================== 配置 ==================== */
-  var API_BASE = 'https://api.moonshot.ai/v1/chat/completions';
-  var DEFAULT_MODEL = 'kimi-k2.6';
+  var API_BASE = 'https://api.moonshot.cn/v1/chat/completions';
+  var DEFAULT_MODEL = 'moonshot-v1-8k';
 
   /* ==================== 状态 ==================== */
   var state = {
@@ -141,6 +141,14 @@
       }
     }
 
+    // 检查 API Key 格式
+    if (!/^(sk-)[A-Za-z0-9]{20,}$/.test(state.apiKey)) {
+      state.isStreaming = false;
+      updateUI('error');
+      onError({ message: 'API Key 格式不正确，应为 sk- 开头的字符串（从 platform.moonshot.cn 获取）' });
+      return;
+    }
+
     fetch(API_BASE, {
       method: 'POST',
       headers: {
@@ -156,7 +164,19 @@
     }).then(function (response) {
       if (!response.ok) {
         return response.json().then(function (data) {
-          throw new Error(data.error ? data.error.message : 'HTTP ' + response.status);
+          var errMsg = 'HTTP ' + response.status;
+          if (data.error && data.error.message) {
+            errMsg = data.error.message;
+          }
+          if (response.status === 401) {
+            errMsg = 'API Key 无效或已过期，请在 platform.moonshot.cn 重新获取';
+          } else if (response.status === 429) {
+            errMsg = '请求频率超限，请稍后再试';
+          }
+          throw new Error(errMsg);
+        }).catch(function (e) {
+          if (e.message && e.message.indexOf('HTTP ') === 0) throw e;
+          throw new Error('请求失败，请检查网络连接后重试');
         });
       }
 
