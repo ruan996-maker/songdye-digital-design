@@ -747,9 +747,16 @@
                 <button class="kimi-save-key-btn" id="kimi-save-key-btn">保存</button>
             </div>
             <div class="kimi-key-help">
-                <a href="https://platform.kimi.ai/console/api-keys" target="_blank" rel="noopener">
-                    &#x1F517; 前往 Kimi 开放平台获取 API Key
+                <a href="https://platform.moonshot.cn/console/api-keys" target="_blank" rel="noopener">
+                    &#x1F517; 前往 Moonshot 开放平台获取 API Key
                 </a>
+            </div>
+            <div style="margin-top:12px;">
+                <button id="kimi-proxy-toggle" style="background:none;border:none;color:var(--text-secondary);font-size:12px;cursor:pointer;padding:4px 0;">&#x2699; CORS 代理设置（可选）</button>
+                <div id="kimi-proxy-box" style="display:none;margin-top:6px;">
+                    <input type="text" id="kimi-proxy-input" class="kimi-key-input" placeholder="代理地址，如 https://your-worker.workers.dev" style="font-size:12px;">
+                    <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px;line-height:1.5;">如遇跨域错误，可部署 Cloudflare Worker 代理转发 API 请求（文档见项目 README）</div>
+                </div>
             </div>
         </div>
 
