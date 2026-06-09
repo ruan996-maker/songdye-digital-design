@@ -1847,9 +1847,13 @@
   // ══════════════════════════════════════════════════════
 
   function bindEvents() {
-    // 搜索
+    // 搜索 — 阻止浏览器自动填充干扰
     var searchInput = document.getElementById('pattern-search');
     if (searchInput) {
+      // 初始化时清空搜索框，防止浏览器自动填充用户名
+      searchInput.value = '';
+      _searchKeyword = '';
+
       var searchTimer = null;
       searchInput.addEventListener('input', function () {
         clearTimeout(searchTimer);
